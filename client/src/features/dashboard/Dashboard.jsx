@@ -1,6 +1,7 @@
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../auth/authSlice';
+import axios from 'axios';
 
 const Dashboard = () => {
   const { user } = useSelector((state) => state.auth);
@@ -21,7 +22,7 @@ const Dashboard = () => {
               <h1 className="text-xl font-semibold">Transaction Auth Platform</h1>
             </div>
             <div className="flex items-center">
-              <span className="mr-4">Welcome, {user?.name}</span>
+              <span className="mr-4">Welcome, {user?.firstName || 'User'}</span>
               <button
                 onClick={handleLogout}
                 className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700"

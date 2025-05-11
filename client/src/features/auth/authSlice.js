@@ -1,15 +1,15 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'http://localhost:5000/api';
 
 export const login = createAsyncThunk(
-  'auth/login',
+  '/users/login',
   async (credentials, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, credentials);
-      localStorage.setItem('token', response.data.token);
-      return response.data;
+      const response = await axios.post(`${API_URL}/users/login`, credentials);
+      localStorage.setItem('token', response.data.data.token);
+      return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response.data);
     }
@@ -17,11 +17,11 @@ export const login = createAsyncThunk(
 );
 
 export const register = createAsyncThunk(
-  'auth/register',
+  'users/register',
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/register`, userData);
-      return response.data;
+      const response = await axios.post(`${API_URL}/users/register`, userData);
+      return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response.data);
     }
@@ -59,7 +59,7 @@ const authSlice = createSlice({
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
         state.isAuthenticated = true;
-        state.user = action.payload.user;
+        state.user = action.payload;
         state.token = action.payload.token;
       })
       .addCase(login.rejected, (state, action) => {
