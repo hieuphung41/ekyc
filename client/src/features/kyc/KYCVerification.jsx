@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import * as faceapi from 'face-api.js';
+import { createWorker } from 'tesseract.js';
 
 const KYCVerification = () => {
   const [step, setStep] = useState(1);
@@ -19,13 +21,31 @@ const KYCVerification = () => {
   const [videoStream, setVideoStream] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState([]);
+  const [faceDetection, setFaceDetection] = useState(null);
+  const [ocrResult, setOcrResult] = useState(null);
 
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
+  const canvasRef = useRef(null);
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { token } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    loadFaceDetectionModels();
+  }, []);
+
+  const loadFaceDetectionModels = async () => {
+    try {
+      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+      await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+      await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+    } catch (error) {
+      console.error('Error loading face detection models:', error);
+      setError('Failed to load face detection models');
+    }
+  };
 
   const startCamera = async () => {
     try {
@@ -71,11 +91,72 @@ const KYCVerification = () => {
     }
   };
 
-  const handleChange = (e) => {
-    if (e.target.name === 'faceImage' || e.target.name === 'idCardImage') {
-      setFormData({ ...formData, [e.target.name]: e.target.files[0] });
+  const handleFaceImageCapture = async (file) => {
+    try {
+      const image = await faceapi.bufferToImage(file);
+      const detections = await faceapi.detectAllFaces(image, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+
+      if (detections.length === 0) {
+        setError('No face detected in the image. Please try again.');
+        return false;
+      }
+
+      if (detections.length > 1) {
+        setError('Multiple faces detected. Please ensure only one face is visible.');
+        return false;
+      }
+
+      setFaceDetection(detections[0]);
+      return true;
+    } catch (error) {
+      console.error('Face detection error:', error);
+      setError('Failed to process face image');
+      return false;
+    }
+  };
+
+  const handleIdCardCapture = async (file) => {
+    try {
+      const worker = await createWorker();
+      await worker.loadLanguage('eng');
+      await worker.initialize('eng');
+      
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+
+      setOcrResult(text);
+      
+      // Extract ID number using regex (adjust pattern based on your ID format)
+      const idPattern = /\b[A-Z0-9]{8,}\b/;
+      const match = text.match(idPattern);
+      
+      if (match) {
+        setFormData(prev => ({ ...prev, idNumber: match[0] }));
+      }
+
+      return true;
+    } catch (error) {
+      console.error('OCR error:', error);
+      setError('Failed to process ID card image');
+      return false;
+    }
+  };
+
+  const handleChange = async (e) => {
+    if (e.target.name === 'faceImage') {
+      const file = e.target.files[0];
+      if (await handleFaceImageCapture(file)) {
+        setFormData(prev => ({ ...prev, faceImage: file }));
+      }
+    } else if (e.target.name === 'idCardImage') {
+      const file = e.target.files[0];
+      if (await handleIdCardCapture(file)) {
+        setFormData(prev => ({ ...prev, idCardImage: file }));
+      }
     } else {
-      setFormData({ ...formData, [e.target.name]: e.target.value });
+      setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     }
   };
 
@@ -101,7 +182,6 @@ const KYCVerification = () => {
       formDataToSend.append('faceImage', formData.faceImage);
       formDataToSend.append('idCardImage', formData.idCardImage);
       
-      // Convert recorded video chunks to blob
       const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
       formDataToSend.append('faceVideo', videoBlob);
 
@@ -136,6 +216,7 @@ const KYCVerification = () => {
                 playsInline
                 className="w-full max-w-md rounded-lg"
               />
+              <canvas ref={canvasRef} className="hidden" />
               <div className="mt-4">
                 <input
                   type="file"
@@ -151,6 +232,11 @@ const KYCVerification = () => {
                     hover:file:bg-indigo-100"
                 />
               </div>
+              {faceDetection && (
+                <div className="mt-2 text-sm text-green-600">
+                  ✓ Face detected successfully
+                </div>
+              )}
             </div>
           </div>
         );
@@ -204,6 +290,12 @@ const KYCVerification = () => {
                   hover:file:bg-indigo-100"
               />
             </div>
+            {ocrResult && (
+              <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                <p className="font-medium">Extracted Text:</p>
+                <p className="text-gray-600">{ocrResult}</p>
+              </div>
+            )}
           </div>
         );
 
