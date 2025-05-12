@@ -145,7 +145,7 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
       const videoBlob = new Blob(recordedChunks, { type: "video/webm" });
       formData.append("faceVideo", videoBlob, "face.webm");
 
-      const response = await axios.post("http://localhost:5000/api/kyc/verify", formData, {
+      const response = await axios.post("http://localhost:5000/api/kyc/submit", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },

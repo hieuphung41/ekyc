@@ -9,6 +9,7 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
   const [isFaceDetected, setIsFaceDetected] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [faceData, setFaceData] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -26,13 +27,27 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     };
   }, []);
 
+  // When videoContainerRef or isCameraActive changes, setup camera if active
+  useEffect(() => {
+    if (isCameraActive && videoContainerRef.current) {
+      setupVideoElement();
+    }
+  }, [isCameraActive, videoContainerRef.current]);
+
   const loadModels = async () => {
     try {
       setIsModelLoading(true);
       
-      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+      // Load multiple models for better face detection as seen in scripts.js
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+        faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+        faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+        faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+        faceapi.nets.ageGenderNet.loadFromUri('/models'),
+      ]);
       
-      console.log("Face detection model loaded successfully");
+      console.log("Face detection models loaded successfully");
       setModelsLoaded(true);
       setIsModelLoading(false);
     } catch (error) {
@@ -46,82 +61,31 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     try {
       setCameraError("");
       setLoading(true);
+      setFaceData(null);
       
       // Stop any existing stream first
       stopCamera();
       
       console.log("Requesting camera access...");
-      // Use simpler camera constraints
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
         audio: false
       });
       
       console.log("Camera access granted, stream received:", stream.active);
       
-      // Use direct ref access instead of getElementById
-      const videoContainer = videoContainerRef.current;
-      if (!videoContainer) {
-        throw new Error("Video container reference is not available");
-      }
-      
-      // Clear the container
-      while (videoContainer.firstChild) {
-        videoContainer.removeChild(videoContainer.firstChild);
-      }
-      
-      // Create new video element
-      const videoElement = document.createElement('video');
-      videoElement.autoplay = true;
-      videoElement.playsInline = true;
-      videoElement.muted = true;
-      videoElement.className = 'w-full h-full object-cover';
-      videoElement.style.display = 'block';
-      videoElement.style.backgroundColor = '#000';
-      
-      // Attach the stream
-      videoElement.srcObject = stream;
-      videoContainer.appendChild(videoElement);
-      
-      // Update the ref
-      videoRef.current = videoElement;
+      // Store the stream so we can use it once the UI is ready
       streamRef.current = stream;
       
-      // Set up canvas
-      if (canvasRef.current) {
-        const canvasElement = canvasRef.current;
-        canvasElement.width = 640;
-        canvasElement.height = 480;
-      }
-      
-      console.log("Video element created and stream attached");
-      
-      // Set camera as active
+      // First activate the camera UI
       setIsCameraActive(true);
-      setLoading(false);
       
-      // Add event listener for when video starts playing
-      videoElement.addEventListener('playing', () => {
-        console.log("Video is now playing");
-        
-        // Start face detection if models loaded
-        if (modelsLoaded) {
-          startFaceDetection();
-        }
-      });
-      
-      // Force play the video
-      try {
-        const playPromise = videoElement.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(error => {
-            console.error("Error playing video:", error);
-            setCameraError("Browser prevented video autoplay. Please click the Start Camera button again.");
-          });
-        }
-      } catch (e) {
-        console.error("Error playing video:", e);
-      }
+      // The setupVideoElement function will be called by the useEffect when
+      // both isCameraActive is true and videoContainerRef.current is available
       
     } catch (error) {
       console.error("Camera access error:", error);
@@ -147,6 +111,97 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     }
   };
 
+  // This function is called after the UI is updated and videoContainerRef is available
+  const setupVideoElement = async () => {
+    try {
+      // Check if stream is available
+      if (!streamRef.current) {
+        console.error("No stream available for video setup");
+        setCameraError("Failed to set up camera stream");
+        setIsCameraActive(false);
+        setLoading(false);
+        return;
+      }
+      
+      // Check if container is available
+      if (!videoContainerRef.current) {
+        console.error("Video container is not available yet");
+        setCameraError("Failed to initialize camera interface");
+        setIsCameraActive(false);
+        setLoading(false);
+        return;
+      }
+      
+      // Clear the container
+      while (videoContainerRef.current.firstChild) {
+        videoContainerRef.current.removeChild(videoContainerRef.current.firstChild);
+      }
+      
+      // Create the video element
+      const videoElement = document.createElement('video');
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.muted = true;
+      videoElement.className = 'w-full h-full object-cover';
+      videoElement.style.display = 'block';
+      videoElement.style.backgroundColor = '#000';
+      
+      // Store the video element in the ref
+      videoRef.current = videoElement;
+      
+      // Add video element to container
+      videoContainerRef.current.appendChild(videoElement);
+      
+      // Attach the stream
+      videoElement.srcObject = streamRef.current;
+      
+      // Set up canvas
+      if (canvasRef.current) {
+        const canvasElement = canvasRef.current;
+        // Set canvas dimensions to match video
+        canvasElement.width = 640;
+        canvasElement.height = 480;
+        
+        // Position canvas exactly over the video
+        canvasElement.style.position = 'absolute';
+        canvasElement.style.left = '0';
+        canvasElement.style.top = '0';
+      }
+      
+      console.log("Video element created and stream attached");
+      
+      // Add event listener for when video starts playing
+      videoElement.addEventListener('playing', () => {
+        console.log("Video is now playing");
+        setLoading(false);
+        
+        // Start face detection if models loaded
+        if (modelsLoaded) {
+          startFaceDetection();
+        }
+      });
+      
+      // Force play the video
+      try {
+        const playPromise = videoElement.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.error("Error playing video:", error);
+            setCameraError("Browser prevented video autoplay. Please click the Start Camera button again.");
+            setLoading(false);
+          });
+        }
+      } catch (e) {
+        console.error("Error playing video:", e);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error in setupVideoElement:", error);
+      setCameraError(`Failed to set up video: ${error.message}`);
+      setLoading(false);
+    }
+  };
+
   const stopCamera = () => {
     console.log("Stopping camera");
     
@@ -167,11 +222,20 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     // Clear video source
     if (videoRef.current) {
       videoRef.current.srcObject = null;
+      videoRef.current = null;
+    }
+    
+    // Clear video container if it exists
+    if (videoContainerRef.current) {
+      while (videoContainerRef.current.firstChild) {
+        videoContainerRef.current.removeChild(videoContainerRef.current.firstChild);
+      }
     }
     
     // Reset states
     setIsCameraActive(false);
     setIsFaceDetected(false);
+    setFaceData(null);
   };
 
   const startFaceDetection = () => {
@@ -183,39 +247,64 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     
     console.log("Starting face detection");
     
-    // Use a more generous interval to reduce CPU usage
+    // Using techniques from scripts.js
     faceDetectionInterval.current = setInterval(async () => {
       if (videoRef.current && canvasRef.current && videoRef.current.readyState >= 2) {
         try {
-          const detections = await faceapi.detectAllFaces(
-            videoRef.current, 
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
-          );
+          // Using ssdMobilenetv1 for better detection as seen in scripts.js
+          const detections = await faceapi
+            .detectAllFaces(videoRef.current, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+            .withFaceLandmarks()
+            .withFaceDescriptors()
+            .withAgeAndGender();
           
-          // Simply set face detected state - don't draw landmarks to save CPU
-          setIsFaceDetected(detections.length > 0);
+          // Set face detected state
+          const hasFaces = detections.length > 0;
+          setIsFaceDetected(hasFaces);
           
-          // Draw bounding box
+          if (hasFaces) {
+            setFaceData(detections[0]);
+          }
+          
+          // Draw on canvas like in scripts.js
           if (canvasRef.current) {
             const displaySize = {
-              width: videoRef.current.videoWidth,
-              height: videoRef.current.videoHeight
+              width: videoRef.current.videoWidth || 640,
+              height: videoRef.current.videoHeight || 480
             };
             
             const ctx = canvasRef.current.getContext('2d');
             ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
             
             if (detections.length > 0) {
-              faceapi.matchDimensions(canvasRef.current, displaySize);
+              // Resize the detections to match the canvas size
               const resizedDetections = faceapi.resizeResults(detections, displaySize);
+              
+              // Draw the detection box
               faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
+              
+              // Draw landmarks
+              faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
+              
+              // Draw age and gender information
+              resizedDetections.forEach(face => {
+                if (face.age && face.gender) {
+                  const { age, gender, genderProbability } = face;
+                  const genderText = `${gender} (${Math.round(genderProbability * 100)}%)`;
+                  const ageText = `~${Math.round(age)} years`;
+                  
+                  // Draw text field with age and gender
+                  const drawBox = new faceapi.draw.DrawBox(face.detection.box, { label: `${genderText}, ${ageText}` });
+                  drawBox.draw(canvasRef.current);
+                }
+              });
             }
           }
         } catch (err) {
           console.error("Face detection error:", err);
         }
       }
-    }, 200); // Slower interval of 200ms instead of 100ms
+    }, 200);
   };
 
   const capturePhoto = async () => {
@@ -238,10 +327,20 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
       }
       
       const formData = new FormData();
-      formData.append("faceImage", blob, "face.jpg");
+      formData.append("file", blob, "face.jpg");
+      formData.append("type", "face");
+      
+      // If we have face data, include it for improved verification
+      if (faceData) {
+        formData.append("faceMetadata", JSON.stringify({
+          age: faceData.age,
+          gender: faceData.gender,
+          confidence: faceData.detection ? faceData.detection.score : null
+        }));
+      }
 
       setLoading(true);
-      const response = await axios.post("http://localhost:5000/api/kyc/verify", formData, {
+      const response = await axios.post("http://localhost:5000/api/kyc/biometric", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -294,9 +393,9 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
               className="relative bg-gray-100 rounded-lg overflow-hidden" 
               style={{ minHeight: "300px", border: "1px solid #ccc" }}
             >
-              {/* Use ref for video container instead of ID */}
+              {/* Video container is always here when isCameraActive is true */}
               <div ref={videoContainerRef} className="w-full h-full">
-                {/* Video element will be inserted here */}
+                {/* Video element will be inserted here by setupVideoElement */}
               </div>
               
               <canvas
@@ -309,6 +408,12 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
                   <p className="text-white font-semibold px-4 py-2 rounded bg-gray-800 bg-opacity-70">
                     Position your face in the frame
                   </p>
+                </div>
+              )}
+              
+              {faceData && faceData.age && (
+                <div className="absolute top-2 left-2 bg-blue-600 text-white text-sm px-2 py-1 rounded">
+                  Nhận diện: {faceData.gender}, ~{Math.round(faceData.age)} tuổi
                 </div>
               )}
             </div>

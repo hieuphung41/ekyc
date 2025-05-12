@@ -24,8 +24,9 @@ const IDCardUploadStep = ({ onNext, onError, setLoading }) => {
       setLoading(true);
       const formData = new FormData();
       formData.append("idCard", selectedFile);
+      formData.append("type", "face");
 
-      const response = await axios.post("http://localhost:5000/api/kyc/verify", formData, {
+      const response = await axios.post("http://localhost:5000/api/kyc/biometric", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
