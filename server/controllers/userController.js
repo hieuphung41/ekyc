@@ -30,6 +30,14 @@ export const register = async (req, res) => {
     // Generate token
     const token = generateToken(user);
 
+    // Set HTTP-only cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.status(201).json({
       success: true,
       data: {
@@ -39,7 +47,6 @@ export const register = async (req, res) => {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        token,
       },
     });
   } catch (error) {
@@ -79,6 +86,14 @@ export const login = async (req, res) => {
     // Generate token
     const token = generateToken(user);
 
+    // Set HTTP-only cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.json({
       success: true,
       data: {
@@ -88,7 +103,6 @@ export const login = async (req, res) => {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        token,
       },
     });
   } catch (error) {
@@ -197,6 +211,25 @@ export const changePassword = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error changing password",
+    });
+  }
+};
+
+// @desc    Logout user
+// @route   POST /api/users/logout
+// @access  Private
+export const logout = async (req, res) => {
+  try {
+    res.clearCookie('auth_token');
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error during logout"
     });
   }
 };

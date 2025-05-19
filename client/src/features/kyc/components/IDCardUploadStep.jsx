@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import axiosInstance from "../../../utils/axios";
 import {
   ExclamationTriangleIcon,
   DocumentTextIcon,
@@ -34,13 +34,12 @@ const IDCardUploadStep = ({ onNext, onError, setLoading }) => {
       formData.append("file", selectedFile);
       formData.append("type", "idCard");
 
-      const response = await axios.post(
-        "http://localhost:5000/api/kyc/biometric",
+      const response = await axiosInstance.post(
+        "/kyc/biometric",
         formData,
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
         }
       );
@@ -60,15 +59,7 @@ const IDCardUploadStep = ({ onNext, onError, setLoading }) => {
     try {
       setProcessingOcr(true);
 
-      const response = await axios.post(
-        "http://localhost:5000/api/kyc/ocr",
-        {},
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
+      const response = await axiosInstance.post("/kyc/ocr");
 
       if (response.data.success) {
         setOcrData(response.data.data);

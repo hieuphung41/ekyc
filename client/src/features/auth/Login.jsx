@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { login, clearError } from './authSlice';
 
 const Login = () => {
@@ -11,7 +11,24 @@ const Login = () => {
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { loading, error } = useSelector((state) => state.auth);
+  const location = useLocation();
+  const { loading, error, isAuthenticated, role } = useSelector((state) => state.auth);
+
+  // Get the return URL from location state or default to dashboard
+  const from = location.state?.from?.pathname || '/';
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (role?.includes('ADMIN')) {
+        navigate('/dashboard', { replace: true });
+      } else if (role?.includes('STAFF')) {
+        navigate('/staff/dashboard', { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
+    }
+  }, [isAuthenticated, role, navigate, from]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -21,7 +38,13 @@ const Login = () => {
     e.preventDefault();
     const result = await dispatch(login(formData));
     if (!result.error) {
-      navigate('/');
+      if (result.payload.user.role.includes('ADMIN')) {
+        navigate('/dashboard', { replace: true });
+      } else if (result.payload.user.role.includes('STAFF')) {
+        navigate('/staff/dashboard', { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
     }
   };
 

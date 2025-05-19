@@ -1,14 +1,15 @@
-import { useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, Link } from 'react-router-dom';
-import { register, clearError } from './authSlice';
+import { useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { useNavigate, Link } from "react-router-dom";
+import { register, clearError } from "./authSlice";
 
 const Register = () => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    phone: "",
   });
 
   const dispatch = useDispatch();
@@ -27,7 +28,7 @@ const Register = () => {
     }
     const result = await dispatch(register(formData));
     if (!result.error) {
-      navigate('/login');
+      navigate("/login");
     }
   };
 
@@ -90,6 +91,17 @@ const Register = () => {
                 onChange={handleChange}
               />
             </div>
+            <div>
+              <input
+                name="phone"
+                type="text"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="phone"
+                value={formData.phone}
+                onChange={handleChange}
+              />
+            </div>
           </div>
 
           <div>
@@ -98,12 +110,15 @@ const Register = () => {
               disabled={loading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              {loading ? 'Creating account...' : 'Create account'}
+              {loading ? "Creating account..." : "Create account"}
             </button>
           </div>
 
           <div className="text-sm text-center">
-            <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            <Link
+              to="/login"
+              className="font-medium text-indigo-600 hover:text-indigo-500"
+            >
               Already have an account? Sign in
             </Link>
           </div>
@@ -113,4 +128,4 @@ const Register = () => {
   );
 };
 
-export default Register; 
+export default Register;

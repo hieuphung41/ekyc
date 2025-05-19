@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import Layout from "../../components/Layout";
+import axiosInstance from "../../utils/axios";
+import Layout from "../../layouts/Layout";
 import FaceDetectionStep from "./components/FaceDetectionStep";
 import IDCardUploadStep from "./components/IDCardUploadStep";
 import VideoVerificationStep from "./components/VideoVerificationStep";
@@ -57,11 +57,7 @@ const KYCVerification = () => {
   const fetchKycStatus = async () => {
     try {
       setLoading(true);
-      const response = await axios.get("http://localhost:5000/api/kyc/status", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
+      const response = await axiosInstance.get("/kyc/status");
 
       if (response.data.success) {
         setKycData(response.data.data);
@@ -139,15 +135,7 @@ const KYCVerification = () => {
   const handleResetStep = async (stepKey) => {
     try {
       setLoading(true);
-      const response = await axios.post(
-        "http://localhost:5000/api/kyc/reset-step",
-        { step: stepKey },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
+      const response = await axiosInstance.post("/kyc/reset-step", { step: stepKey });
 
       if (response.data.success) {
         setKycData((prev) => ({
@@ -209,7 +197,9 @@ const KYCVerification = () => {
   return (
     <Layout>
       <div className="bg-white rounded-lg shadow-md p-6 max-w-3xl mx-auto">
-        <h1 className="text-2xl font-bold text-center mb-6">eKYC Verification</h1>
+        <h1 className="text-2xl font-bold text-center mb-6">
+          eKYC Verification
+        </h1>
 
         {/* Progress Tracker */}
         <div className="mb-8">

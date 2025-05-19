@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import axios from "axios";
+import axiosInstance from "../../../utils/axios";
+import * as faceapi from "face-api.js";
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -10,84 +11,68 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
   const [idType, setIdType] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingComplete, setRecordingComplete] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordedChunks, setRecordedChunks] = useState([]);
   const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(false);
 
-  // Liveness challenge states
-  const [livnessChallengeId, setLivenessChallengeId] = useState(null);
-  const [livenessActions, setLivenessActions] = useState([]);
+  const [livenessActions] = useState([
+    { action: "center", text: "Keep your face centered in the oval" },
+    { action: "left", text: "Turn your face to the left" },
+    { action: "right", text: "Turn your face to the right" },
+    { action: "up", text: "Look up" },
+    { action: "down", text: "Look down" },
+  ]);
+
   const [currentActionIndex, setCurrentActionIndex] = useState(0);
   const [completedActions, setCompletedActions] = useState([]);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [actionDetected, setActionDetected] = useState(false);
 
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-  const timerRef = useRef(null);
-  const actionTimerRef = useRef(null);
+  const faceDetectionInterval = useRef(null);
 
   useEffect(() => {
+    loadModels();
     return () => {
       stopRecording();
-      clearActionTimer();
-      if (recordingPreviewUrl) {
-        URL.revokeObjectURL(recordingPreviewUrl);
-      }
+      if (recordingPreviewUrl) URL.revokeObjectURL(recordingPreviewUrl);
     };
   }, []);
 
-  const clearActionTimer = () => {
-    if (actionTimerRef.current) {
-      clearInterval(actionTimerRef.current);
-      actionTimerRef.current = null;
-    }
-  };
-
-  const fetchLivenessChallenge = async () => {
+  const loadModels = async () => {
     try {
-      setLoading(true);
-      const response = await axios.get(
-        "http://localhost:5000/api/kyc/liveness-challenge",
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
-
-      if (response.data.success) {
-        const { challengeId, actions } = response.data.data;
-        setLivenessChallengeId(challengeId);
-        setLivenessActions(actions);
-        setCurrentActionIndex(0);
-        setCompletedActions([]);
-      }
+      setIsModelLoading(true);
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+        faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+        faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+      ]);
+      setModelsLoaded(true);
+      setIsModelLoading(false);
     } catch (error) {
-      console.error("Error fetching liveness challenge:", error);
-      onError("Failed to get liveness challenge. Please try again.");
-    } finally {
-      setLoading(false);
+      console.error("Error loading face detection models:", error);
+      onError("Failed to load face detection models");
+      setIsModelLoading(false);
     }
   };
 
   const startRecording = async () => {
     try {
       setLoading(true);
-
-      // Reset recording state
       setRecordedChunks([]);
-      setRecordingSeconds(0);
       setRecordingComplete(false);
       setCurrentActionIndex(0);
       setCompletedActions([]);
+      setActionDetected(false);
 
       if (recordingPreviewUrl) {
         URL.revokeObjectURL(recordingPreviewUrl);
         setRecordingPreviewUrl("");
       }
-
-      // Fetch liveness challenge
-      await fetchLivenessChallenge();
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -100,121 +85,138 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
 
       videoRef.current.srcObject = stream;
       streamRef.current = stream;
-
-      // Start the video
       await videoRef.current.play();
 
-      // Determine supported mime types for video recording
-      let mimeType = "video/webm;codecs=vp9";
-      const supportedMimeTypes = [
-        "video/webm;codecs=vp9",
-        "video/webm;codecs=vp8",
-        "video/webm",
-        "video/mp4",
-      ];
-
-      // Find the first supported mime type
-      for (const type of supportedMimeTypes) {
-        if (MediaRecorder.isTypeSupported(type)) {
-          mimeType = type;
-          break;
-        }
-      }
-
-      // Create recorder with supported mime type
+      const mimeType = MediaRecorder.isTypeSupported("video/webm")
+        ? "video/webm"
+        : "video/mp4";
       const options = { mimeType };
 
-      try {
-        const mediaRecorder = new MediaRecorder(stream, options);
-        mediaRecorderRef.current = mediaRecorder;
-
-        // Set up data handlers
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            setRecordedChunks((prev) => [...prev, event.data]);
-          }
-        };
-
-        // Start recording after a short delay to allow video to initialize
-        setTimeout(() => {
-          mediaRecorder.start(1000); // Collect data every second
-          setIsRecording(true);
-          setLoading(false);
-
-          // Set up timer
-          timerRef.current = setInterval(() => {
-            setRecordingSeconds((prev) => {
-              const newValue = prev + 1;
-
-              // Stop after 20 seconds or if all actions completed
-              if (newValue >= 20) {
-                stopRecording();
-              }
-
-              return newValue;
-            });
-          }, 1000);
-
-          // Start the action sequence timer
-          startActionSequence();
-        }, 500);
-      } catch (err) {
-        console.error("MediaRecorder error:", err);
-        onError(
-          `MediaRecorder error: ${err.message}. Please try a different browser.`
-        );
-        setLoading(false);
-
-        // Clean up stream in case of error
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          setRecordedChunks((prev) => [...prev, event.data]);
         }
-      }
+      };
+
+      mediaRecorder.start(1000);
+      setIsRecording(true);
+      setLoading(false);
+      startFaceDetection();
     } catch (error) {
       console.error("Error starting recording:", error);
-      onError(
-        "Failed to start video recording. Please check camera permissions."
-      );
+      onError("Failed to start recording. Check camera/mic permissions.");
       setLoading(false);
     }
   };
 
-  const startActionSequence = () => {
-    // Clear any existing timer
-    clearActionTimer();
+  const startFaceDetection = () => {
+    if (!videoRef.current || !canvasRef.current) return;
 
-    // Set a 5-second interval for each action
-    actionTimerRef.current = setInterval(() => {
-      setCurrentActionIndex((prevIndex) => {
-        // If we've completed all actions, stop the interval
-        if (prevIndex >= livenessActions.length) {
-          clearActionTimer();
-          return prevIndex;
+    faceDetectionInterval.current = setInterval(async () => {
+      if (videoRef.current && videoRef.current.readyState >= 2) {
+        try {
+          const detections = await faceapi
+            .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks();
+
+          const hasFaces = detections.length > 0;
+          setFaceDetected(hasFaces);
+
+          if (hasFaces && canvasRef.current) {
+            const displaySize = {
+              width: videoRef.current.videoWidth,
+              height: videoRef.current.videoHeight,
+            };
+
+            faceapi.matchDimensions(canvasRef.current, displaySize);
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+            const ctx = canvasRef.current.getContext("2d");
+            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
+            // Draw oval guide
+            const centerX = canvasRef.current.width / 2;
+            const centerY = canvasRef.current.height / 2;
+            const radiusX = 120;
+            const radiusY = 150;
+
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Draw face landmarks
+            faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
+
+            // Check current action and detect movement
+            if (currentActionIndex < livenessActions.length) {
+              const currentAction = livenessActions[currentActionIndex];
+              const face = resizedDetections[0];
+              
+              if (face) {
+                const landmarks = face.landmarks.positions;
+                const nose = landmarks[30]; // Nose tip
+                const leftEye = landmarks[36]; // Left eye
+                const rightEye = landmarks[45]; // Right eye
+                const mouth = landmarks[66]; // Mouth center
+
+                let actionCompleted = false;
+
+                switch (currentAction.action) {
+                  case "center":
+                    // Check if face is centered in oval
+                    const distanceX = Math.abs(nose.x - centerX) / radiusX;
+                    const distanceY = Math.abs(nose.y - centerY) / radiusY;
+                    actionCompleted = distanceX * distanceX + distanceY * distanceY <= 0.8;
+                    break;
+
+                  case "left":
+                    // Check if face is turned left (using eye positions)
+                    actionCompleted = leftEye.x < rightEye.x - 30;
+                    break;
+
+                  case "right":
+                    // Check if face is turned right (using eye positions)
+                    actionCompleted = rightEye.x < leftEye.x - 30;
+                    break;
+
+                  case "up":
+                    // Check if face is looking up (using nose position)
+                    actionCompleted = nose.y < centerY - 30;
+                    break;
+
+                  case "down":
+                    // Check if face is looking down (using nose position)
+                    actionCompleted = nose.y > centerY + 30;
+                    break;
+                }
+
+                if (actionCompleted && !actionDetected) {
+                  setActionDetected(true);
+                  setCompletedActions((prev) => [...prev, currentAction.action]);
+                  setTimeout(() => {
+                    setCurrentActionIndex((prev) => prev + 1);
+                    setActionDetected(false);
+                  }, 1000); // Wait 1 second before next action
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Face detection error:", error);
         }
-
-        // Add the current action to completed actions
-        setCompletedActions((prev) => [
-          ...prev,
-          livenessActions[prevIndex].action,
-        ]);
-
-        // Move to the next action
-        return prevIndex + 1;
-      });
-    }, 5000); // Each action takes 5 seconds
+      }
+    }, 100);
   };
 
   const stopRecording = () => {
-    // Clear timers
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (faceDetectionInterval.current) {
+      clearInterval(faceDetectionInterval.current);
     }
 
-    clearActionTimer();
-
-    // Stop media recorder
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
@@ -222,13 +224,11 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
       mediaRecorderRef.current.stop();
     }
 
-    // Stop all tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
 
-    // Generate preview if we have chunks
     if (recordedChunks.length > 0) {
       const blob = new Blob(recordedChunks, { type: "video/webm" });
       const url = URL.createObjectURL(blob);
@@ -239,92 +239,23 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
     setIsRecording(false);
   };
 
-  const submitVerification = async () => {
-    if (!idNumber || !idType) {
-      onError("Please fill in all required fields");
-      return;
-    }
-
-    if (recordedChunks.length === 0) {
-      onError("Please record a verification video");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const formData = new FormData();
-      formData.append("idNumber", idNumber);
-      formData.append("idType", idType);
-
-      // Create video blob and append to form with explicit mime type
-      // Using video/webm is more compatible with most browsers
-      const videoBlob = new Blob(recordedChunks, {
-        type: "video/webm",
-      });
-
-      // Add file extension to filename to help server identify it as video
-      formData.append("faceVideo", videoBlob, "face_verification.webm");
-
-      // Add the liveness challenge ID and completed actions
-      if (livnessChallengeId) {
-        formData.append("challengeId", livnessChallengeId);
-        formData.append("completedActions", JSON.stringify(completedActions));
-      }
-
-      const response = await axios.post(
-        "http://localhost:5000/api/kyc/submit",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
-
-      if (response.data.success) {
-        onComplete();
-      }
-    } catch (error) {
-      console.error("Error submitting verification:", error);
-      // Show the exact error message to help debugging
-      const errorMessage =
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to complete verification";
-      onError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const getCurrentAction = () => {
-    if (
-      !livenessActions.length ||
-      currentActionIndex >= livenessActions.length
-    ) {
-      return null;
-    }
+    if (currentActionIndex >= livenessActions.length) return null;
     return livenessActions[currentActionIndex];
   };
 
   const renderActionInstructions = () => {
     const currentAction = getCurrentAction();
-
     if (!currentAction) {
-      if (completedActions.length >= livenessActions.length) {
-        return (
-          <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-4">
-            <div className="flex">
-              <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-              <p>All actions completed! You can now stop recording.</p>
-            </div>
+      return (
+        <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-4">
+          <div className="flex">
+            <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
+            <p>All actions completed! You can now stop recording.</p>
           </div>
-        );
-      }
-      return null;
+        </div>
+      );
     }
-
     return (
       <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded mb-4 animate-pulse">
         <div className="flex items-center">
@@ -332,11 +263,6 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
             {currentActionIndex + 1}
           </div>
           <p className="font-semibold">{currentAction.text}</p>
-        </div>
-        <div className="mt-1 ml-8">
-          <p className="text-sm">
-            Time remaining: {5 - (recordingSeconds % 5)} seconds
-          </p>
         </div>
       </div>
     );
@@ -346,9 +272,7 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
     <div>
       <h2 className="text-xl font-semibold mb-2">Step 3: Record Face Video</h2>
       <p className="text-gray-600 mb-4">
-        Please record a short video of your face while following the on-screen
-        instructions. This helps us verify your identity and ensure you're a
-        real person.
+        Please record a short video while keeping your face inside the oval.
       </p>
 
       <div className="max-w-2xl mx-auto mb-8">
@@ -356,13 +280,6 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
           className="relative bg-gray-100 rounded-lg overflow-hidden"
           style={{ minHeight: "400px" }}
         >
-          {isRecording && (
-            <div className="absolute top-4 right-4 bg-red-600 text-white px-3 py-1 rounded-full z-10 flex items-center">
-              <div className="w-3 h-3 bg-white rounded-full mr-2 animate-pulse"></div>
-              Recording: {recordingSeconds}s
-            </div>
-          )}
-
           {recordingPreviewUrl ? (
             <video
               src={recordingPreviewUrl}
@@ -370,14 +287,19 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
               controls
             />
           ) : (
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              playsInline
-              muted
-            />
+            <div className="relative">
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+              />
+              <canvas
+                ref={canvasRef}
+                className="absolute top-0 left-0 w-full h-full pointer-events-none"
+              />
+            </div>
           )}
-
           {isRecording && (
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-black bg-opacity-70">
               {renderActionInstructions()}
@@ -385,50 +307,44 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
           )}
         </div>
 
-        {isRecording && (
-          <div className="mt-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">
-                Progress
-              </span>
-              <span className="text-sm text-gray-500">
-                {completedActions.length} / {livenessActions.length} actions
-                completed
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full"
-                style={{
-                  width: `${
-                    livenessActions.length
-                      ? (completedActions.length / livenessActions.length) * 100
-                      : 0
-                  }%`,
-                }}
-              ></div>
-            </div>
+        <div className="mt-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-gray-700">Progress</span>
+            <span className="text-sm text-gray-500">
+              {completedActions.length} / {livenessActions.length} actions
+              completed
+            </span>
           </div>
-        )}
+          <div className="relative w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+              style={{
+                width: `${
+                  (completedActions.length / livenessActions.length) * 100
+                }%`,
+              }}
+            ></div>
+          </div>
+        </div>
 
         <div className="mt-4 flex justify-center">
           {!isRecording && !recordingComplete ? (
             <button
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               onClick={startRecording}
             >
               Start Recording
             </button>
           ) : isRecording ? (
             <button
-              className="w-full py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              className="w-full py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700"
               onClick={stopRecording}
             >
-              Stop Recording ({Math.max(0, 20 - recordingSeconds)}s)
+              Stop Recording
             </button>
           ) : (
             <button
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               onClick={startRecording}
             >
               Record Again
@@ -450,7 +366,7 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
             id="id-type"
             value={idType}
             onChange={(e) => setIdType(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-gray-300 rounded-md"
           >
             <option value="">Select ID Type</option>
             <option value="passport">Passport</option>
@@ -471,18 +387,51 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
             type="text"
             value={idNumber}
             onChange={(e) => setIdNumber(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-gray-300 rounded-md"
             placeholder="Enter your ID number"
           />
         </div>
 
         <button
-          className={`w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
-            (recordedChunks.length === 0 || !idNumber || !idType) &&
+          className={`w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 ${
+            (!recordedChunks.length || !idType || !idNumber) &&
             "opacity-50 cursor-not-allowed"
           }`}
-          onClick={submitVerification}
-          disabled={recordedChunks.length === 0 || !idNumber || !idType}
+          onClick={async () => {
+            if (!recordedChunks.length || !idType || !idNumber) {
+              onError("All fields are required and video must be recorded.");
+              return;
+            }
+            try {
+              setLoading(true);
+              const formData = new FormData();
+              formData.append("idNumber", idNumber);
+              formData.append("idType", idType);
+              const videoBlob = new Blob(recordedChunks, {
+                type: "video/webm",
+              });
+              formData.append("faceVideo", videoBlob, "face_verification.webm");
+              formData.append(
+                "completedActions",
+                JSON.stringify(completedActions)
+              );
+              await axiosInstance.post(
+                "/kyc/submit",
+                formData,
+                {
+                  headers: {
+                    "Content-Type": "multipart/form-data",
+                  },
+                }
+              );
+              onComplete();
+            } catch (error) {
+              onError(error.response?.data?.message || "Verification failed.");
+            } finally {
+              setLoading(false);
+            }
+          }}
+          disabled={!recordedChunks.length || !idType || !idNumber}
         >
           Complete Verification
         </button>

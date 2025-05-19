@@ -1,5 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
+import axiosInstance from '../../utils/axios';
+import { checkAuthStatus } from '../../utils/auth';
+import { jwtDecode } from 'jwt-decode';
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -7,11 +9,24 @@ export const login = createAsyncThunk(
   '/users/login',
   async (credentials, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/users/login`, credentials);
-      localStorage.setItem('token', response.data.data.token);
-      return response.data.data;
+      const response = await axiosInstance.post(`${API_URL}/users/login`, credentials, {
+        withCredentials: true
+      });
+      
+      // Decode the token to get user info
+      const token = response.data.data.token;
+      const decoded = jwtDecode(token);
+      
+      // Return both the token and decoded user info
+      return {
+        token,
+        user: {
+          ...response.data.data,
+          role: decoded.role
+        }
+      };
     } catch (error) {
-      return rejectWithValue(error.response.data);
+      return rejectWithValue(error.response?.data || { message: 'Login failed' });
     }
   }
 );
@@ -20,20 +35,47 @@ export const register = createAsyncThunk(
   'users/register',
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await axios.post(`${API_URL}/users/register`, userData);
+      const response = await axiosInstance.post(`${API_URL}/users/register`, userData, {
+        withCredentials: true
+      });
       return response.data.data;
     } catch (error) {
-      return rejectWithValue(error.response.data);
+      return rejectWithValue(error.response?.data || { message: 'Registration failed' });
+    }
+  }
+);
+
+export const checkAuth = createAsyncThunk(
+  'auth/check',
+  async (_, { rejectWithValue }) => {
+    try {
+      const userData = await checkAuthStatus();
+      if (!userData) {
+        return rejectWithValue({ message: 'Not authenticated' });
+      }
+      
+      // If we have a token in the response, decode it
+      if (userData.token) {
+        const decoded = jwtDecode(userData.token);
+        return {
+          ...userData,
+          role: decoded.role
+        };
+      }
+      
+      return userData;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Authentication check failed' });
     }
   }
 );
 
 const initialState = {
   user: null,
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  isAuthenticated: false,
   loading: false,
   error: null,
+  role: null
 };
 
 const authSlice = createSlice({
@@ -41,10 +83,9 @@ const authSlice = createSlice({
   initialState,
   reducers: {
     logout: (state) => {
-      localStorage.removeItem('token');
       state.user = null;
-      state.token = null;
       state.isAuthenticated = false;
+      state.role = null;
     },
     clearError: (state) => {
       state.error = null;
@@ -59,11 +100,15 @@ const authSlice = createSlice({
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
         state.isAuthenticated = true;
-        state.user = action.payload;
-        state.token = action.payload.token;
+        state.user = action.payload.user;
+        state.role = action.payload.user.role;
+        state.error = null;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
+        state.isAuthenticated = false;
+        state.user = null;
+        state.role = null;
         state.error = action.payload?.message || 'Login failed';
       })
       .addCase(register.pending, (state) => {
@@ -72,10 +117,28 @@ const authSlice = createSlice({
       })
       .addCase(register.fulfilled, (state) => {
         state.loading = false;
+        state.error = null;
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload?.message || 'Registration failed';
+      })
+      .addCase(checkAuth.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(checkAuth.fulfilled, (state, action) => {
+        state.loading = false;
+        state.isAuthenticated = true;
+        state.user = action.payload;
+        state.role = action.payload.role;
+        state.error = null;
+      })
+      .addCase(checkAuth.rejected, (state) => {
+        state.loading = false;
+        state.isAuthenticated = false;
+        state.user = null;
+        state.role = null;
+        state.error = null;
       });
   },
 });

@@ -1,6 +1,6 @@
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import Layout from "../../components/Layout";
+import Layout from "../../layouts/Layout";
 
 const Dashboard = () => {
   const { user } = useSelector((state) => state.auth);

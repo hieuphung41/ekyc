@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import * as faceapi from "face-api.js";
 import axios from "axios";
+import axiosInstance from "../../../utils/axios";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/solid";
 
 const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
@@ -421,13 +422,12 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
       }
 
       setLoading(true);
-      const response = await axios.post(
-        "http://localhost:5000/api/kyc/biometric",
+      const response = await axiosInstance.post(
+        "/kyc/biometric",
         formData,
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
         }
       );

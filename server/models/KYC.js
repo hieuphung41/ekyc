@@ -50,7 +50,7 @@ const kycSchema = new mongoose.Schema({
     type: Number,
     default: 1,
     min: 1,
-    max: 3,
+    max: 4,
   },
   personalInfo: {
     dateOfBirth: Date,
@@ -101,6 +101,22 @@ const kycSchema = new mongoose.Schema({
       uploadedAt: Date,
       fileType: String,
       fileSize: Number,
+    },
+    voiceData: {
+      audioUrl: String,
+      verificationStatus: {
+        type: String,
+        enum: ["pending", "verified", "rejected"],
+        default: "pending",
+      },
+      confidence: Number,
+      livenessScore: Number,
+      uploadedAt: Date,
+      fileType: String,
+      fileSize: Number,
+      duration: Number,
+      sampleRate: Number,
+      channels: Number,
     },
     videoData: {
       videoUrl: String,
