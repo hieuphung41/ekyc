@@ -3,13 +3,11 @@ import axiosInstance from '../../utils/axios';
 import { checkAuthStatus } from '../../utils/auth';
 import { jwtDecode } from 'jwt-decode';
 
-const API_URL = 'http://localhost:5000/api';
-
 export const login = createAsyncThunk(
   '/users/login',
   async (credentials, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post(`${API_URL}/users/login`, credentials, {
+      const response = await axiosInstance.post('/users/login', credentials, {
         withCredentials: true
       });
       
@@ -35,7 +33,7 @@ export const register = createAsyncThunk(
   'users/register',
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post(`${API_URL}/users/register`, userData, {
+      const response = await axiosInstance.post('/users/register', userData, {
         withCredentials: true
       });
       return response.data.data;
@@ -70,6 +68,20 @@ export const checkAuth = createAsyncThunk(
   }
 );
 
+export const logout = createAsyncThunk(
+  'auth/logout',
+  async (_, { rejectWithValue }) => {
+    try {
+      await axiosInstance.post('/users/logout', {}, {
+        withCredentials: true
+      });
+      return null;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Logout failed' });
+    }
+  }
+);
+
 const initialState = {
   user: null,
   isAuthenticated: false,
@@ -82,11 +94,6 @@ const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    logout: (state) => {
-      state.user = null;
-      state.isAuthenticated = false;
-      state.role = null;
-    },
     clearError: (state) => {
       state.error = null;
     },
@@ -139,9 +146,24 @@ const authSlice = createSlice({
         state.user = null;
         state.role = null;
         state.error = null;
+      })
+      .addCase(logout.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(logout.fulfilled, (state) => {
+        state.loading = false;
+        state.isAuthenticated = false;
+        state.user = null;
+        state.role = null;
+        state.error = null;
+      })
+      .addCase(logout.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload?.message || 'Logout failed';
       });
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { clearError } = authSlice.actions;
 export default authSlice.reducer; 

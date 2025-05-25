@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axiosInstance from "../../utils/axios";
+import { useDispatch, useSelector } from "react-redux";
 import Layout from "../../layouts/Layout";
 import FaceDetectionStep from "./components/FaceDetectionStep";
 import IDCardUploadStep from "./components/IDCardUploadStep";
@@ -15,14 +15,12 @@ import {
   IdentificationIcon,
   VideoCameraIcon,
 } from "@heroicons/react/24/outline";
+import { getKYCStatus, resetKYCStep, clearError, clearSuccess } from "./kycSlice";
 
 const KYCVerification = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [kycData, setKycData] = useState(null);
+  const dispatch = useDispatch();
+  const { status, currentStep, completedSteps, loading, error, success } = useSelector((state) => state.kyc);
 
   // Step information
   const steps = [
@@ -51,113 +49,35 @@ const KYCVerification = () => {
 
   // Fetch KYC status on component mount
   useEffect(() => {
-    fetchKycStatus();
-  }, []);
+    dispatch(getKYCStatus());
+  }, [dispatch]);
 
-  const fetchKycStatus = async () => {
-    try {
-      setLoading(true);
-      const response = await axiosInstance.get("/kyc/status");
-
-      if (response.data.success) {
-        setKycData(response.data.data);
-
-        // If KYC is already approved, redirect to dashboard
-        if (response.data.data.status === "approved") {
-          navigate("/dashboard");
-          return;
-        }
-
-        // Set step based on the current step from backend
-        setStep(response.data.data.currentStep || 1);
-
-        // If all steps are completed but status is still pending, show success message
-        if (response.data.data.currentStep === 4) {
-          setSuccess(
-            "Your KYC verification is complete and currently under review."
-          );
-        }
-      } else {
-        // If no KYC application exists, start from step 1
-        setStep(1);
-      }
-    } catch (error) {
-      console.error("Error fetching KYC status:", error);
-
-      // If there's a 404 (no KYC application found), start from step 1
-      if (error.response?.status === 404) {
-        setStep(1);
-      } else {
-        setError("Failed to load KYC information. Please try again later.");
-      }
-    } finally {
-      setLoading(false);
+  // Handle navigation when KYC is approved
+  useEffect(() => {
+    if (status === "approved") {
+      navigate("/dashboard");
     }
-  };
+  }, [status, navigate]);
 
   // Progress to next step
   const handleNextStep = (successMessage = "") => {
     if (successMessage) {
-      setSuccess(successMessage);
+      dispatch(clearError());
     }
-    setStep((prevStep) => prevStep + 1);
-    setError(""); // Clear any errors when moving to next step
-  };
-
-  // Go to dashboard after completion
-  const handleCompletion = () => {
-    setSuccess(
-      "Verification completed successfully! Your account is now being verified."
-    );
-    setStep(4); // All steps completed
-    setKycData((prev) => ({
-      ...prev,
-      currentStep: 4,
-      completedSteps: {
-        ...prev?.completedSteps,
-        videoVerification: { completed: true },
-      },
-    }));
   };
 
   // Handle errors across components
   const handleError = (errorMessage) => {
-    setError(errorMessage);
-    setSuccess(""); // Clear any success messages when an error occurs
-  };
-
-  // Update loading state across components
-  const setLoadingState = (isLoading) => {
-    setLoading(isLoading);
+    dispatch(clearSuccess());
   };
 
   // Reset a step to try again
   const handleResetStep = async (stepKey) => {
-    try {
-      setLoading(true);
-      const response = await axiosInstance.post("/kyc/reset-step", { step: stepKey });
-
-      if (response.data.success) {
-        setKycData((prev) => ({
-          ...prev,
-          ...response.data.data,
-        }));
-        setStep(response.data.data.currentStep);
-        setSuccess(`${stepKey} step has been reset. You can try again.`);
-      }
-    } catch (error) {
-      console.error("Error resetting step:", error);
-      setError(
-        error.response?.data?.message ||
-          "Failed to reset step. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
+    dispatch(resetKYCStep(stepKey));
   };
 
   // Show loading indicator while fetching status
-  if (loading && step === null) {
+  if (loading && !currentStep) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[60vh]">
@@ -168,7 +88,7 @@ const KYCVerification = () => {
   }
 
   // If all steps are completed, show completion screen
-  if (step === 4) {
+  if (currentStep === 4) {
     return (
       <Layout>
         <div className="bg-white rounded-lg shadow-md p-6 max-w-3xl mx-auto">
@@ -205,9 +125,8 @@ const KYCVerification = () => {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             {steps.map((s, index) => {
-              // Check if this step is completed from kycData
-              const isCompleted =
-                kycData?.completedSteps?.[s.key]?.completed || false;
+              // Check if this step is completed from completedSteps
+              const isCompleted = completedSteps?.[s.key]?.completed || false;
 
               return (
                 <React.Fragment key={s.number}>
@@ -217,14 +136,14 @@ const KYCVerification = () => {
                       className={`relative flex items-center justify-center w-12 h-12 rounded-full ${
                         isCompleted
                           ? "bg-green-500"
-                          : s.number === step
+                          : s.number === currentStep
                           ? "bg-blue-600"
                           : "bg-gray-200"
                       }`}
                     >
                       <s.icon
                         className={`h-6 w-6 ${
-                          isCompleted || s.number === step
+                          isCompleted || s.number === currentStep
                             ? "text-white"
                             : "text-gray-500"
                         }`}
@@ -246,7 +165,7 @@ const KYCVerification = () => {
                         className={`text-sm font-medium ${
                           isCompleted
                             ? "text-green-600"
-                            : s.number === step
+                            : s.number === currentStep
                             ? "text-blue-600"
                             : "text-gray-500"
                         }`}
@@ -255,7 +174,7 @@ const KYCVerification = () => {
                       </p>
                       <p
                         className={`text-xs ${
-                          s.number === step ? "text-gray-900" : "text-gray-500"
+                          s.number === currentStep ? "text-gray-900" : "text-gray-500"
                         }`}
                       >
                         {s.title}
@@ -267,7 +186,7 @@ const KYCVerification = () => {
                   {index < steps.length - 1 && (
                     <div
                       className={`flex-1 h-1 mx-2 ${
-                        isCompleted || s.number < step
+                        isCompleted || s.number < currentStep
                           ? "bg-green-500"
                           : "bg-gray-200"
                       }`}
@@ -304,27 +223,24 @@ const KYCVerification = () => {
         )}
 
         <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-          {step === 1 && (
+          {currentStep === 1 && (
             <FaceDetectionStep
               onNext={handleNextStep}
               onError={handleError}
-              setLoading={setLoadingState}
             />
           )}
 
-          {step === 2 && (
+          {currentStep === 2 && (
             <IDCardUploadStep
               onNext={handleNextStep}
               onError={handleError}
-              setLoading={setLoadingState}
             />
           )}
 
-          {step === 3 && (
+          {currentStep === 3 && (
             <VideoVerificationStep
-              onComplete={handleCompletion}
+              onComplete={handleNextStep}
               onError={handleError}
-              setLoading={setLoadingState}
             />
           )}
         </div>

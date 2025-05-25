@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import * as faceapi from "face-api.js";
-import axios from "axios";
-import axiosInstance from "../../../utils/axios";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/solid";
+import { uploadFacePhoto } from "../kycSlice";
 
-const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
+const FaceDetectionStep = ({ onNext, onError }) => {
+  const dispatch = useDispatch();
+  const { loading, error } = useSelector((state) => state.kyc);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isFaceDetected, setIsFaceDetected] = useState(false);
@@ -42,7 +44,7 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
     try {
       setIsModelLoading(true);
 
-      // Load multiple models for better face detection as seen in scripts.js
+      // Load multiple models for better face detection
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
         faceapi.nets.ssdMobilenetv1.loadFromUri("/models"),
@@ -64,7 +66,6 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
   const startCamera = async () => {
     try {
       setCameraError("");
-      setLoading(true);
       setFaceData(null);
       setLivenessScore(null);
 
@@ -88,294 +89,123 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
 
       // First activate the camera UI
       setIsCameraActive(true);
-
-      // The setupVideoElement function will be called by the useEffect when
-      // both isCameraActive is true and videoContainerRef.current is available
     } catch (error) {
       console.error("Camera access error:", error);
       let errorMsg = "Failed to access camera";
-
       if (error.name === "NotAllowedError") {
-        errorMsg =
-          "Camera access denied. Please allow camera access in your browser settings.";
+        errorMsg = "Camera access was denied. Please allow camera access to continue.";
       } else if (error.name === "NotFoundError") {
         errorMsg = "No camera found. Please connect a camera and try again.";
-      } else if (error.name === "NotReadableError") {
-        errorMsg =
-          "Camera is in use by another application. Please close other programs using your camera.";
-      } else if (error.name === "AbortError") {
-        errorMsg = "Camera initialization was aborted. Please try again.";
-      } else if (error.name === "TypeError") {
-        errorMsg = "Camera API not available. Please use a modern browser.";
-      } else {
-        errorMsg = `Camera error: ${error.message || "Unknown error"}`;
       }
-
       setCameraError(errorMsg);
-      setLoading(false);
-      setIsCameraActive(false);
+      onError(errorMsg);
     }
   };
 
-  // This function is called after the UI is updated and videoContainerRef is available
-  const setupVideoElement = async () => {
-    try {
-      // Check if stream is available
-      if (!streamRef.current) {
-        console.error("No stream available for video setup");
-        setCameraError("Failed to set up camera stream");
-        setIsCameraActive(false);
-        setLoading(false);
-        return;
-      }
+  const setupVideoElement = () => {
+    if (!videoRef.current || !streamRef.current) return;
 
-      // Check if container is available
-      if (!videoContainerRef.current) {
-        console.error("Video container is not available yet");
-        setCameraError("Failed to initialize camera interface");
-        setIsCameraActive(false);
-        setLoading(false);
-        return;
-      }
-
-      // Clear the container
-      while (videoContainerRef.current.firstChild) {
-        videoContainerRef.current.removeChild(
-          videoContainerRef.current.firstChild
-        );
-      }
-
-      // Create the video element
-      const videoElement = document.createElement("video");
-      videoElement.autoplay = true;
-      videoElement.playsInline = true;
-      videoElement.muted = true;
-      videoElement.className = "w-full h-full object-cover";
-      videoElement.style.display = "block";
-      videoElement.style.backgroundColor = "#000";
-
-      // Store the video element in the ref
-      videoRef.current = videoElement;
-
-      // Add video element to container
-      videoContainerRef.current.appendChild(videoElement);
-
-      // Attach the stream
-      videoElement.srcObject = streamRef.current;
-
-      // Set up canvas
-      if (canvasRef.current) {
-        const canvasElement = canvasRef.current;
-        // Set canvas dimensions to match video
-        canvasElement.width = 640;
-        canvasElement.height = 480;
-
-        // Position canvas exactly over the video
-        canvasElement.style.position = "absolute";
-        canvasElement.style.left = "0";
-        canvasElement.style.top = "0";
-      }
-
-      console.log("Video element created and stream attached");
-
-      // Add event listener for when video starts playing
-      videoElement.addEventListener("playing", () => {
-        console.log("Video is now playing");
-        setLoading(false);
-
-        // Start face detection if models loaded
-        if (modelsLoaded) {
-          startFaceDetection();
-        }
-      });
-
-      // Force play the video
-      try {
-        const playPromise = videoElement.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((error) => {
-            console.error("Error playing video:", error);
-            setCameraError(
-              "Browser prevented video autoplay. Please click the Start Camera button again."
-            );
-            setLoading(false);
-          });
-        }
-      } catch (e) {
-        console.error("Error playing video:", e);
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error("Error in setupVideoElement:", error);
-      setCameraError(`Failed to set up video: ${error.message}`);
-      setLoading(false);
-    }
+    videoRef.current.srcObject = streamRef.current;
+    videoRef.current.play().then(() => {
+      startFaceDetection();
+    }).catch(error => {
+      console.error("Error playing video:", error);
+      setCameraError("Failed to start video stream");
+      onError("Failed to start video stream");
+    });
   };
 
   const stopCamera = () => {
-    console.log("Stopping camera");
+    if (faceDetectionInterval.current) {
+      clearInterval(faceDetectionInterval.current);
+    }
 
-    // Stop stream tracks
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        track.stop();
-      });
+      streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
 
-    // Clear face detection interval
-    if (faceDetectionInterval.current) {
-      clearInterval(faceDetectionInterval.current);
-      faceDetectionInterval.current = null;
-    }
-
-    // Clear video source
     if (videoRef.current) {
       videoRef.current.srcObject = null;
-      videoRef.current = null;
     }
 
-    // Clear video container if it exists
-    if (videoContainerRef.current) {
-      while (videoContainerRef.current.firstChild) {
-        videoContainerRef.current.removeChild(
-          videoContainerRef.current.firstChild
-        );
-      }
-    }
-
-    // Reset states
     setIsCameraActive(false);
     setIsFaceDetected(false);
     setIsFaceCentered(false);
-    setFaceData(null);
-    setLivenessScore(null);
   };
 
   const startFaceDetection = () => {
-    // Only start face detection if we have an active stream
-    if (!videoRef.current || !videoRef.current.srcObject) {
-      console.error("Cannot start face detection - video not initialized");
-      return;
-    }
+    if (!videoRef.current || !canvasRef.current) return;
 
-    console.log("Starting face detection");
-
-    // Using techniques from scripts.js
     faceDetectionInterval.current = setInterval(async () => {
-      if (
-        videoRef.current &&
-        canvasRef.current &&
-        videoRef.current.readyState >= 2
-      ) {
+      if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
         try {
-          // Using ssdMobilenetv1 for better detection as seen in scripts.js
-          const detections = await faceapi
-            .detectAllFaces(
-              videoRef.current,
-              new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
-            )
-            .withFaceLandmarks()
-            .withFaceDescriptors()
-            .withAgeAndGender();
+          const detections = await faceapi.detectAllFaces(
+            videoRef.current,
+            new faceapi.TinyFaceDetectorOptions()
+          ).withFaceLandmarks().withAgeAndGender();
 
-          // Set face detected state
-          const hasFaces = detections.length > 0;
-          setIsFaceDetected(hasFaces);
+          if (detections.length > 0) {
+            const primaryFace = detections[0];
+            setIsFaceDetected(true);
 
-          // Draw on canvas like in scripts.js
-          if (canvasRef.current) {
-            const displaySize = {
-              width: videoRef.current.videoWidth || 640,
-              height: videoRef.current.videoHeight || 480,
-            };
+            // Check if face is centered
+            const videoWidth = videoRef.current.videoWidth;
+            const videoHeight = videoRef.current.videoHeight;
+            const faceBox = primaryFace.detection.box;
+            const centerX = faceBox.x + faceBox.width / 2;
+            const centerY = faceBox.y + faceBox.height / 2;
 
-            const ctx = canvasRef.current.getContext("2d");
-            ctx.clearRect(
-              0,
-              0,
-              canvasRef.current.width,
-              canvasRef.current.height
-            );
+            const isCentered = 
+              centerX > videoWidth * 0.3 && 
+              centerX < videoWidth * 0.7 && 
+              centerY > videoHeight * 0.3 && 
+              centerY < videoHeight * 0.7;
 
-            // Draw oval face guide
-            const centerX = canvasRef.current.width / 2;
-            const centerY = canvasRef.current.height / 2;
-            const radiusX = 120;
-            const radiusY = 150;
+            setIsFaceCentered(isCentered);
 
-            ctx.strokeStyle = isFaceCentered
-              ? "green"
-              : "rgba(255, 255, 255, 0.8)";
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-            ctx.stroke();
+            // Store face data for later use
+            setFaceData({
+              age: primaryFace.age,
+              gender: primaryFace.gender,
+              detection: primaryFace.detection,
+              landmarks: primaryFace.landmarks
+            });
 
-            if (detections.length > 0) {
-              // Resize the detections to match the canvas size
-              const resizedDetections = faceapi.resizeResults(
-                detections,
-                displaySize
-              );
+            // Draw face detection results
+            const canvas = canvasRef.current;
+            const displaySize = { width: videoWidth, height: videoHeight };
+            faceapi.matchDimensions(canvas, displaySize);
 
-              // Get the primary face (first one)
-              const primaryFace = resizedDetections[0];
-              setFaceData(primaryFace);
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
 
-              // Check if face is centered within the oval
-              const { box } = primaryFace.detection;
-              const faceX = box.x + box.width / 2;
-              const faceY = box.y + box.height / 2;
+            // Draw face box
+            const drawOptions = new faceapi.draw.DrawOptions({
+              labelSize: 20,
+              lineWidth: 2,
+              boxColor: isCentered ? '#00ff00' : '#ff0000'
+            });
 
-              // Calculate distance from center of oval
-              const distanceX = Math.abs(faceX - centerX) / radiusX;
-              const distanceY = Math.abs(faceY - centerY) / radiusY;
+            // Draw a custom face box
+            new faceapi.draw.DrawBox(faceBox, drawOptions).draw(canvas);
 
-              // Check if face is within the oval area
-              const isFaceCenteredInOval =
-                distanceX * distanceX + distanceY * distanceY <= 0.8;
-              setIsFaceCentered(isFaceCenteredInOval);
+            // Draw landmarks
+            faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
 
-              // Draw the detection box
-              const drawOptions = {
-                lineWidth: 2,
-                boxColor: isFaceCenteredInOval
-                  ? "rgba(0, 255, 0, 0.6)"
-                  : "rgba(255, 200, 0, 0.6)",
-                drawLabelOptions: {
-                  anchorPosition: "TOP_LEFT",
-                  backgroundColor: isFaceCenteredInOval
-                    ? "rgba(0, 255, 0, 0.6)"
-                    : "rgba(255, 200, 0, 0.6)",
-                },
-              };
-
-              // Draw a custom face box
-              new faceapi.draw.DrawBox(box, drawOptions).draw(
-                canvasRef.current
-              );
-
-              // Draw landmarks
-              faceapi.draw.drawFaceLandmarks(
-                canvasRef.current,
-                resizedDetections
-              );
-
-              // Calculate simple liveness score based on face landmarks movement
-              // This is a simplified version for demonstration
-              // In a real app, you would use more sophisticated methods
-              if (primaryFace.landmarks) {
-                const landmarks = primaryFace.landmarks.positions;
-                // Check for eye movement, blink detection, etc.
-                // For now we're simulating a score
-                const simulatedLivenessScore = Math.min(
-                  0.9,
-                  Math.random() * 0.5 + 0.4
-                );
-                setLivenessScore(simulatedLivenessScore);
-              }
+            // Calculate simple liveness score based on face landmarks movement
+            if (primaryFace.landmarks) {
+              const landmarks = primaryFace.landmarks.positions;
+              // Check for eye movement, blink detection, etc.
+              // For now we're simulating a score
+              const simulatedLivenessScore = Math.min(0.9, Math.random() * 0.5 + 0.4);
+              setLivenessScore(simulatedLivenessScore);
             }
+          } else {
+            setIsFaceDetected(false);
+            setIsFaceCentered(false);
+            setFaceData(null);
+            setLivenessScore(null);
           }
         } catch (err) {
           console.error("Face detection error:", err);
@@ -421,30 +251,18 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
         );
       }
 
-      setLoading(true);
-      const response = await axiosInstance.post(
-        "/kyc/biometric",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      if (response.data.success) {
+      const result = await dispatch(uploadFacePhoto(formData));
+      if (!result.error) {
         stopCamera();
         onNext(
           `Face photo verified successfully with a liveness score of ${Math.round(
-            response.data.data.livenessScore * 100
+            result.payload.livenessScore * 100
           )}%!`
         );
       }
     } catch (error) {
       console.error("Error capturing or uploading face photo:", error);
       onError(error.response?.data?.message || "Failed to verify face photo");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -456,96 +274,80 @@ const FaceDetectionStep = ({ onNext, onError, setLoading }) => {
         oval frame and ensure good lighting.
       </p>
 
-      <div className="relative w-full max-w-2xl mx-auto">
-        {!isCameraActive ? (
-          <div>
-            <button
-              className={`w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                isModelLoading && "opacity-50 cursor-not-allowed"
-              }`}
-              onClick={startCamera}
-              disabled={isModelLoading}
-            >
-              {isModelLoading ? "Loading Models..." : "Start Camera"}
-            </button>
+      {cameraError && (
+        <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+          <div className="flex">
+            <ExclamationTriangleIcon className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
+            <span>{cameraError}</span>
+          </div>
+        </div>
+      )}
 
-            {cameraError && (
-              <div className="mt-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
-                <div className="flex">
-                  <ExclamationTriangleIcon className="h-5 w-5 text-red-400 mr-2 flex-shrink-0" />
-                  <span>{cameraError}</span>
-                </div>
-              </div>
+      {isModelLoading && (
+        <div className="text-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Loading face detection models...</p>
+        </div>
+      )}
+
+      {!isCameraActive && !isModelLoading && (
+        <div className="text-center py-4">
+          <button
+            onClick={startCamera}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Start Camera
+          </button>
+        </div>
+      )}
+
+      {isCameraActive && (
+        <div className="relative" ref={videoContainerRef}>
+          <div className="relative w-full max-w-2xl mx-auto">
+            <video
+              ref={videoRef}
+              className="w-full rounded-lg"
+              autoPlay
+              playsInline
+              muted
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute top-0 left-0 w-full h-full"
+            />
+            <div
+              ref={ovalRef}
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-80 border-2 border-white rounded-full opacity-50"
+            ></div>
+          </div>
+
+          <div className="mt-4 text-center">
+            {isFaceDetected ? (
+              isFaceCentered ? (
+                <p className="text-green-600">Face detected and centered!</p>
+              ) : (
+                <p className="text-yellow-600">Face detected, please center it in the oval</p>
+              )
+            ) : (
+              <p className="text-red-600">No face detected</p>
             )}
           </div>
-        ) : (
-          <>
-            <div
-              className="relative bg-gray-100 rounded-lg overflow-hidden"
-              style={{ minHeight: "480px", border: "1px solid #ccc" }}
+
+          <div className="mt-4 text-center">
+            <button
+              onClick={capturePhoto}
+              disabled={!isFaceDetected || !isFaceCentered || loading}
+              className={`px-4 py-2 rounded-md text-white ${
+                isFaceDetected && isFaceCentered && !loading
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-gray-400 cursor-not-allowed"
+              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
             >
-              {/* Video container is always here when isCameraActive is true */}
-              <div ref={videoContainerRef} className="w-full h-full">
-                {/* Video element will be inserted here by setupVideoElement */}
-              </div>
-
-              <canvas
-                ref={canvasRef}
-                className="absolute top-0 left-0 w-full h-full pointer-events-none"
-              />
-
-              {!isFaceDetected && isCameraActive && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 pointer-events-none">
-                  <p className="text-white font-semibold px-4 py-2 rounded bg-gray-800 bg-opacity-70">
-                    Position your face in the oval frame
-                  </p>
-                </div>
-              )}
-
-              {faceData && (
-                <div className="absolute top-2 left-2 bg-blue-600 text-white text-sm px-2 py-1 rounded">
-                  {faceData.gender && faceData.age && (
-                    <span>
-                      Detection: {faceData.gender}, ~{Math.round(faceData.age)}{" "}
-                      years
-                    </span>
-                  )}
-                  {livenessScore !== null && (
-                    <span className="ml-2">
-                      | Liveness: {Math.round(livenessScore * 100)}%
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {isFaceCentered && faceData && (
-                <div className="absolute bottom-2 left-2 right-2 bg-green-600 text-white text-sm px-2 py-1 rounded text-center">
-                  Face positioned correctly! You can take the photo now.
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 flex gap-4 justify-center">
-              <button
-                className={`py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  (!isFaceDetected || !isFaceCentered) &&
-                  "opacity-50 cursor-not-allowed"
-                }`}
-                onClick={capturePhoto}
-                disabled={!isFaceDetected || !isFaceCentered}
-              >
-                Take Photo
-              </button>
-              <button
-                className="py-2 px-4 border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                onClick={stopCamera}
-              >
-                Stop Camera
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+              {loading ? "Processing..." : "Capture Photo"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

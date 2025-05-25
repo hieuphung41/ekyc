@@ -5,6 +5,7 @@ import {
   getProfile,
   updateProfile,
   changePassword,
+  logout,
 } from "../controllers/userController.js";
 import { protect } from "../middlewares/auth.js";
 import {
@@ -23,5 +24,6 @@ router.post("/login", validateLogin, validate, login);
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
 router.put("/change-password", protect, changePassword);
+router.post('/logout', protect, logout);
 
 export default router;

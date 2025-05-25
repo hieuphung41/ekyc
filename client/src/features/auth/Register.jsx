@@ -5,28 +5,62 @@ import { register, clearError } from "./authSlice";
 
 const Register = () => {
   const [formData, setFormData] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     password: "",
     confirmPassword: "",
-    phone: "",
+    phoneNumber: "",
   });
 
+  const [validationError, setValidationError] = useState("");
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    // Clear validation error when user types
+    if (validationError) setValidationError("");
+  };
+
+  const validateForm = () => {
+    // Basic required field validation
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password || !formData.confirmPassword) {
+      setValidationError("All fields are required");
+      return false;
+    }
+
+    // Password match validation
+    if (formData.password !== formData.confirmPassword) {
+      setValidationError("Passwords do not match");
+      return false;
+    }
+
+    // Basic email format check
+    if (!formData.email.includes('@')) {
+      setValidationError("Please enter a valid email address");
+      return false;
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.password !== formData.confirmPassword) {
-      dispatch(clearError());
+
+    // Basic validation
+    if (!validateForm()) {
       return;
     }
-    const result = await dispatch(register(formData));
+
+    // Prepare data for backend (remove confirmPassword)
+    const { confirmPassword, ...registrationData } = formData;
+
+    console.log(registrationData);
+
+    // Send registration request
+    const result = await dispatch(register(registrationData));
     if (!result.error) {
       navigate("/login");
     }
@@ -41,20 +75,31 @@ const Register = () => {
           </h2>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
+          {(error || validationError) && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {error}
+              {validationError || error}
             </div>
           )}
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <input
-                name="name"
+                name="firstName"
                 type="text"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Full name"
-                value={formData.name}
+                placeholder="First Name"
+                value={formData.firstName}
+                onChange={handleChange}
+              />
+            </div>
+            <div>
+              <input
+                name="lastName"
+                type="text"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Last Name"
+                value={formData.lastName}
                 onChange={handleChange}
               />
             </div>
@@ -85,7 +130,7 @@ const Register = () => {
                 name="confirmPassword"
                 type="password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Confirm password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
@@ -93,12 +138,12 @@ const Register = () => {
             </div>
             <div>
               <input
-                name="phone"
+                name="phoneNumber"
                 type="text"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="phone"
-                value={formData.phone}
+                placeholder="Phone Number"
+                value={formData.phoneNumber}
                 onChange={handleChange}
               />
             </div>

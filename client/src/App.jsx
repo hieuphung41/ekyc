@@ -9,6 +9,7 @@ import Register from './features/auth/Register';
 import KYCVerification from './features/kyc/KYCVerification';
 import Dashboard from './features/dashboard/Dashboard';
 import PrivateRoute from './components/PrivateRoute';
+import Navbar from './components/NavBar';
 
 function AppContent() {
   const dispatch = useDispatch();
@@ -20,12 +21,15 @@ function AppContent() {
   return (
     <Router>
       <div>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/kyc" element={<PrivateRoute><KYCVerification /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-        </Routes>
+        <Navbar />
+        <main className="container mx-auto px-4 py-8">
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/kyc" element={<PrivateRoute><KYCVerification /></PrivateRoute>} />
+            <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          </Routes>
+        </main>
       </div>
     </Router>
   );

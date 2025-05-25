@@ -1,5 +1,5 @@
 import User from "../models/User.js";
-import { generateToken } from "../utils/jwt.js";
+import { generateToken, verifyToken } from "../utils/jwt.js";
 import { uploadMiddleware, deleteFile } from "../utils/fileUpload.js";
 
 // @desc    Register user
@@ -25,17 +25,6 @@ export const register = async (req, res) => {
       firstName,
       lastName,
       phoneNumber,
-    });
-
-    // Generate token
-    const token = generateToken(user);
-
-    // Set HTTP-only cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
     res.status(201).json({
@@ -87,9 +76,9 @@ export const login = async (req, res) => {
     const token = generateToken(user);
 
     // Set HTTP-only cookie
-    res.cookie('token', token, {
+    res.cookie('auth_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'development',
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
@@ -103,6 +92,7 @@ export const login = async (req, res) => {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         role: user.role,
+        token: token,
       },
     });
   } catch (error) {
@@ -119,7 +109,28 @@ export const login = async (req, res) => {
 // @access  Private
 export const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    // Get token from cookie
+    const token = req.cookies.token;
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized to access this route",
+      });
+    }
+
+    // Verify token
+    const decoded = verifyToken(token);
+
+    // Get user from token
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     res.json({
       success: true,
       data: user,
@@ -220,16 +231,22 @@ export const changePassword = async (req, res) => {
 // @access  Private
 export const logout = async (req, res) => {
   try {
-    res.clearCookie('auth_token');
-    res.json({
+    // Clear the auth token cookie
+    res.clearCookie('auth_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'development',
+      sameSite: 'strict'
+    });
+
+    res.status(200).json({
       success: true,
       message: 'Logged out successfully'
     });
   } catch (error) {
-    console.error("Logout error:", error);
+    console.error('Logout error:', error);
     res.status(500).json({
       success: false,
-      message: "Error during logout"
+      message: 'Error during logout'
     });
   }
 };
