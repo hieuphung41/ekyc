@@ -46,12 +46,6 @@ const kycSchema = new mongoose.Schema({
       },
     },
   },
-  currentStep: {
-    type: Number,
-    default: 1,
-    min: 1,
-    max: 4,
-  },
   personalInfo: {
     dateOfBirth: Date,
     nationality: String,
@@ -191,18 +185,18 @@ kycSchema.methods.isValid = function () {
   return this.status === "approved" && !this.isExpired();
 };
 
-// Method to update the currentStep based on completed steps
-kycSchema.methods.updateCurrentStep = function () {
-  if (this.completedSteps.videoVerification.completed) {
-    this.currentStep = 4; // All steps completed
-  } else if (this.completedSteps.documentVerification.completed) {
-    this.currentStep = 3; // Move to video verification
-  } else if (this.completedSteps.faceVerification.completed) {
-    this.currentStep = 2; // Move to document verification
-  } else {
-    this.currentStep = 1; // Start with face verification
+// Method to get the next incomplete step
+kycSchema.methods.getNextIncompleteStep = function () {
+  if (!this.completedSteps.faceVerification.completed) {
+    return 1;
   }
-  return this.currentStep;
+  if (!this.completedSteps.documentVerification.completed) {
+    return 2;
+  }
+  if (!this.completedSteps.videoVerification.completed) {
+    return 3;
+  }
+  return 4; // All steps completed
 };
 
 export default mongoose.model("KYC", kycSchema);

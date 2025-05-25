@@ -20,7 +20,18 @@ import { getKYCStatus, resetKYCStep, clearError, clearSuccess } from "./kycSlice
 const KYCVerification = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { status, currentStep, completedSteps, loading, error, success } = useSelector((state) => state.kyc);
+  const { status, completedSteps, loading, error, success } = useSelector((state) => state.kyc);
+
+  // Determine current step based on completedSteps
+  const getCurrentStep = () => {
+    if (!completedSteps) return 1;
+    if (!completedSteps.faceVerification?.completed) return 1;
+    if (!completedSteps.documentVerification?.completed) return 2;
+    if (!completedSteps.videoVerification?.completed) return 3;
+    return 4;
+  };
+
+  const currentStep = getCurrentStep();
 
   // Step information
   const steps = [
@@ -77,7 +88,7 @@ const KYCVerification = () => {
   };
 
   // Show loading indicator while fetching status
-  if (loading && !currentStep) {
+  if (loading && !completedSteps) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[60vh]">
@@ -125,8 +136,8 @@ const KYCVerification = () => {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             {steps.map((s, index) => {
-              // Check if this step is completed from completedSteps
               const isCompleted = completedSteps?.[s.key]?.completed || false;
+              const isCurrentStep = s.number === currentStep;
 
               return (
                 <React.Fragment key={s.number}>
@@ -136,14 +147,14 @@ const KYCVerification = () => {
                       className={`relative flex items-center justify-center w-12 h-12 rounded-full ${
                         isCompleted
                           ? "bg-green-500"
-                          : s.number === currentStep
+                          : isCurrentStep
                           ? "bg-blue-600"
                           : "bg-gray-200"
                       }`}
                     >
                       <s.icon
                         className={`h-6 w-6 ${
-                          isCompleted || s.number === currentStep
+                          isCompleted || isCurrentStep
                             ? "text-white"
                             : "text-gray-500"
                         }`}
@@ -165,7 +176,7 @@ const KYCVerification = () => {
                         className={`text-sm font-medium ${
                           isCompleted
                             ? "text-green-600"
-                            : s.number === currentStep
+                            : isCurrentStep
                             ? "text-blue-600"
                             : "text-gray-500"
                         }`}
@@ -174,7 +185,7 @@ const KYCVerification = () => {
                       </p>
                       <p
                         className={`text-xs ${
-                          s.number === currentStep ? "text-gray-900" : "text-gray-500"
+                          isCurrentStep ? "text-gray-900" : "text-gray-500"
                         }`}
                       >
                         {s.title}

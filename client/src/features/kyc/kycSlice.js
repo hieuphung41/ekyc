@@ -76,7 +76,6 @@ export const resetKYCStep = createAsyncThunk(
 
 const initialState = {
   status: null,
-  currentStep: null,
   completedSteps: {},
   loading: false,
   error: null,
@@ -107,7 +106,6 @@ const kycSlice = createSlice({
       .addCase(getKYCStatus.fulfilled, (state, action) => {
         state.loading = false;
         state.status = action.payload.status;
-        state.currentStep = action.payload.currentStep;
         state.completedSteps = action.payload.completedSteps;
         state.error = null;
       })
@@ -122,10 +120,7 @@ const kycSlice = createSlice({
       })
       .addCase(uploadFacePhoto.fulfilled, (state, action) => {
         state.loading = false;
-        state.completedSteps = {
-          ...state.completedSteps,
-          faceVerification: { completed: true }
-        };
+        state.completedSteps = action.payload.completedSteps;
         state.success = 'Face photo uploaded successfully';
         state.error = null;
       })
@@ -140,10 +135,7 @@ const kycSlice = createSlice({
       })
       .addCase(uploadIDCard.fulfilled, (state, action) => {
         state.loading = false;
-        state.completedSteps = {
-          ...state.completedSteps,
-          documentVerification: { completed: true }
-        };
+        state.completedSteps = action.payload.completedSteps;
         state.success = 'ID card uploaded successfully';
         state.error = null;
       })
@@ -158,10 +150,7 @@ const kycSlice = createSlice({
       })
       .addCase(uploadVideo.fulfilled, (state, action) => {
         state.loading = false;
-        state.completedSteps = {
-          ...state.completedSteps,
-          videoVerification: { completed: true }
-        };
+        state.completedSteps = action.payload.completedSteps;
         state.success = 'Video uploaded successfully';
         state.error = null;
       })
@@ -176,7 +165,6 @@ const kycSlice = createSlice({
       })
       .addCase(resetKYCStep.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentStep = action.payload.currentStep;
         state.completedSteps = action.payload.completedSteps;
         state.success = 'Step reset successfully';
         state.error = null;

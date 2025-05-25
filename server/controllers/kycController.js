@@ -52,7 +52,9 @@ export const uploadFacePhoto = async (req, res) => {
 
     // Generate secure filename
     const fileExtension = path.extname(file.originalname);
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}${fileExtension}`;
+    const secureFilename = `${crypto
+      .randomBytes(16)
+      .toString("hex")}${fileExtension}`;
 
     // Create secure storage path
     const storageDir = path.join(process.cwd(), "storage", "biometric", "face");
@@ -88,7 +90,7 @@ export const uploadFacePhoto = async (req, res) => {
     };
 
     // Mark face verification step as completed if liveness passed
-    if (livenessScore > 0.7) {
+    if (livenessScore > 0.5) {
       kyc.completedSteps.faceVerification = {
         completed: true,
         completedAt: new Date(),
@@ -96,10 +98,15 @@ export const uploadFacePhoto = async (req, res) => {
       };
     }
 
-    // Update current step
-    kyc.updateCurrentStep();
-
     await kyc.save();
+
+    // Update KYC state in cookie
+    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'development',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
 
     res.json({
       success: true,
@@ -154,7 +161,10 @@ export const uploadIDDocument = async (req, res) => {
 
     // Validate file types
     const allowedImageTypes = ["image/jpeg", "image/png"];
-    if (!allowedImageTypes.includes(frontImage.mimetype) || !allowedImageTypes.includes(backImage.mimetype)) {
+    if (
+      !allowedImageTypes.includes(frontImage.mimetype) ||
+      !allowedImageTypes.includes(backImage.mimetype)
+    ) {
       await deleteFile(frontImage.path);
       await deleteFile(backImage.path);
       return res.status(400).json({
@@ -188,8 +198,12 @@ export const uploadIDDocument = async (req, res) => {
     // Generate secure filenames
     const frontExtension = path.extname(frontImage.originalname);
     const backExtension = path.extname(backImage.originalname);
-    const frontFilename = `${crypto.randomBytes(16).toString("hex")}${frontExtension}`;
-    const backFilename = `${crypto.randomBytes(16).toString("hex")}${backExtension}`;
+    const frontFilename = `${crypto
+      .randomBytes(16)
+      .toString("hex")}${frontExtension}`;
+    const backFilename = `${crypto
+      .randomBytes(16)
+      .toString("hex")}${backExtension}`;
 
     // Create secure storage paths
     const storageDir = path.join(process.cwd(), "storage", "documents");
@@ -208,15 +222,17 @@ export const uploadIDDocument = async (req, res) => {
       frontImageUrl: frontPath,
       backImageUrl: backPath,
       verificationStatus: "pending",
-      uploadedAt: new Date()
+      uploadedAt: new Date(),
     };
 
     // If document already exists, update it; otherwise add new
     if (kyc.documents && kyc.documents.length > 0) {
       // Delete old files if they exist
-      if (kyc.documents[0].frontImageUrl) await deleteFile(kyc.documents[0].frontImageUrl);
-      if (kyc.documents[0].backImageUrl) await deleteFile(kyc.documents[0].backImageUrl);
-      
+      if (kyc.documents[0].frontImageUrl)
+        await deleteFile(kyc.documents[0].frontImageUrl);
+      if (kyc.documents[0].backImageUrl)
+        await deleteFile(kyc.documents[0].backImageUrl);
+
       kyc.documents[0] = documentData;
     } else {
       kyc.documents = [documentData];
@@ -225,7 +241,7 @@ export const uploadIDDocument = async (req, res) => {
     // Mark document verification step as pending
     kyc.completedSteps.documentVerification = {
       completed: false,
-      attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1
+      attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1,
     };
 
     // Update current step
@@ -239,17 +255,19 @@ export const uploadIDDocument = async (req, res) => {
         documentType,
         verificationStatus: "pending",
         currentStep: kyc.currentStep,
-        completedSteps: kyc.completedSteps
-      }
+        completedSteps: kyc.completedSteps,
+      },
     });
   } catch (error) {
     console.error("Document upload error:", error);
     // Clean up files if they exist
-    if (req.files?.frontImage?.[0]?.path) await deleteFile(req.files.frontImage[0].path);
-    if (req.files?.backImage?.[0]?.path) await deleteFile(req.files.backImage[0].path);
+    if (req.files?.frontImage?.[0]?.path)
+      await deleteFile(req.files.frontImage[0].path);
+    if (req.files?.backImage?.[0]?.path)
+      await deleteFile(req.files.backImage[0].path);
     res.status(500).json({
       success: false,
-      message: "Error uploading document images"
+      message: "Error uploading document images",
     });
   }
 };
@@ -302,10 +320,17 @@ export const uploadVideo = async (req, res) => {
 
     // Generate secure filename
     const fileExtension = path.extname(videoFile.originalname);
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}${fileExtension}`;
+    const secureFilename = `${crypto
+      .randomBytes(16)
+      .toString("hex")}${fileExtension}`;
 
     // Create secure storage path
-    const storageDir = path.join(process.cwd(), "storage", "biometric", "video");
+    const storageDir = path.join(
+      process.cwd(),
+      "storage",
+      "biometric",
+      "video"
+    );
     await fs.mkdir(storageDir, { recursive: true });
 
     // Move file to secure location
@@ -377,10 +402,16 @@ export const getLivenessChallenge = async (req, res) => {
   try {
     // Define the specific face movement actions
     const possibleActions = [
-      { action: "FACE_STILL", text: "Please keep your face still and look at the camera" },
+      {
+        action: "FACE_STILL",
+        text: "Please keep your face still and look at the camera",
+      },
       { action: "TURN_LEFT", text: "Please turn your head to the left" },
       { action: "TURN_RIGHT", text: "Please turn your head to the right" },
-      { action: "ROTATE_FACE", text: "Please rotate your face in a complete circle" }
+      {
+        action: "ROTATE_FACE",
+        text: "Please rotate your face in a complete circle",
+      },
     ];
 
     // Select all actions in sequence
@@ -395,8 +426,8 @@ export const getLivenessChallenge = async (req, res) => {
       kyc.livenessCheck = {
         status: "pending",
         timestamp: new Date(),
-        actionSequence: selectedActions.map(action => action.action),
-        challengeId
+        actionSequence: selectedActions.map((action) => action.action),
+        challengeId,
       };
       await kyc.save();
     }
@@ -406,7 +437,7 @@ export const getLivenessChallenge = async (req, res) => {
       data: {
         challengeId,
         actions: selectedActions,
-        totalActions: selectedActions.length
+        totalActions: selectedActions.length,
       },
     });
   } catch (error) {
@@ -433,8 +464,7 @@ export const getKYCStatus = async (req, res) => {
       // Create new KYC application if none exists
       kyc = await KYC.create({
         userId: req.user.id,
-        status: 'pending',
-        currentStep: 1,
+        status: "pending",
         completedSteps: {
           faceVerification: { completed: false },
           documentVerification: { completed: false },
@@ -444,11 +474,18 @@ export const getKYCStatus = async (req, res) => {
       });
     }
 
+    // Set KYC state in cookie
+    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'development',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.json({
       success: true,
       data: {
         status: kyc.status,
-        currentStep: kyc.currentStep,
         completedSteps: kyc.completedSteps,
         documents: kyc.documents,
         personalInfo: kyc.personalInfo,
@@ -580,9 +617,6 @@ export const resetKycStep = async (req, res) => {
       }
     }
 
-    // Update current step based on completed steps
-    kyc.updateCurrentStep();
-
     // Set status back to pending if it was rejected
     if (kyc.status === "rejected") {
       kyc.status = "pending";
@@ -598,10 +632,17 @@ export const resetKycStep = async (req, res) => {
 
     await kyc.save();
 
+    // Update KYC state in cookie
+    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'development',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.json({
       success: true,
       data: {
-        currentStep: kyc.currentStep,
         completedSteps: kyc.completedSteps,
         status: kyc.status,
       },
@@ -685,10 +726,17 @@ export const uploadVoiceSample = async (req, res) => {
 
     // Generate secure filename
     const fileExtension = path.extname(voiceFile.originalname);
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}${fileExtension}`;
+    const secureFilename = `${crypto
+      .randomBytes(16)
+      .toString("hex")}${fileExtension}`;
 
     // Create secure storage path
-    const storageDir = path.join(process.cwd(), "storage", "biometric", "voice");
+    const storageDir = path.join(
+      process.cwd(),
+      "storage",
+      "biometric",
+      "voice"
+    );
     await fs.mkdir(storageDir, { recursive: true });
 
     // Move file to secure location
@@ -773,7 +821,9 @@ export const verifyVoiceSample = async (req, res) => {
     kyc.verificationHistory.push({
       action: "voice_verification",
       status: verificationResult.success ? "success" : "failed",
-      notes: `Voice verification ${verificationResult.success ? "successful" : "failed"}`,
+      notes: `Voice verification ${
+        verificationResult.success ? "successful" : "failed"
+      }`,
     });
 
     await kyc.save();

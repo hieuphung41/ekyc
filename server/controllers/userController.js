@@ -110,7 +110,7 @@ export const login = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     // Get token from cookie
-    const token = req.cookies.token;
+    const token = req.cookies.auth_token;
     
     if (!token) {
       return res.status(401).json({
