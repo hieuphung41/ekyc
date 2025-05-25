@@ -18,7 +18,7 @@ export const uploadFacePhoto = createAsyncThunk(
   'kyc/uploadFacePhoto',
   async (formData, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post('/api/kyc/biometric', formData, {
+      const response = await axiosInstance.post('/kyc/face', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -34,7 +34,7 @@ export const uploadIDCard = createAsyncThunk(
   'kyc/uploadIDCard',
   async (formData, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post('/api/kyc/document', formData, {
+      const response = await axiosInstance.post('/kyc/document', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -50,7 +50,7 @@ export const uploadVideo = createAsyncThunk(
   'kyc/uploadVideo',
   async (formData, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post('/api/kyc/video', formData, {
+      const response = await axiosInstance.post('/kyc/video', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -66,7 +66,7 @@ export const resetKYCStep = createAsyncThunk(
   'kyc/resetStep',
   async (stepKey, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post('/api/kyc/reset-step', { step: stepKey });
+      const response = await axiosInstance.post('/kyc/reset-step', { step: stepKey });
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || { message: 'Failed to reset KYC step' });

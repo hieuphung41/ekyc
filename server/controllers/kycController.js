@@ -5,10 +5,127 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs/promises";
 
-// @desc    Upload document images
+// @desc    Upload face photo for verification
+// @route   POST /api/kyc/face
+// @access  Private
+export const uploadFacePhoto = async (req, res) => {
+  try {
+    const { faceMetadata } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: "No face photo uploaded",
+      });
+    }
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.mimetype)) {
+      await deleteFile(file.path);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file type. Only JPEG and PNG are allowed",
+      });
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      await deleteFile(file.path);
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum size: 5MB",
+      });
+    }
+
+    // Find existing KYC application
+    let kyc = await KYC.findOne({ userId: req.user.id });
+    if (!kyc) {
+      await deleteFile(file.path);
+      return res.status(404).json({
+        success: false,
+        message: "KYC application not found",
+      });
+    }
+
+    // Generate secure filename
+    const fileExtension = path.extname(file.originalname);
+    const secureFilename = `${crypto.randomBytes(16).toString("hex")}${fileExtension}`;
+
+    // Create secure storage path
+    const storageDir = path.join(process.cwd(), "storage", "biometric", "face");
+    await fs.mkdir(storageDir, { recursive: true });
+
+    // Move file to secure location
+    const securePath = path.join(storageDir, secureFilename);
+    await fs.rename(file.path, securePath);
+
+    // Process face metadata if available
+    let livenessScore = 0;
+    let confidence = 0;
+
+    if (faceMetadata) {
+      try {
+        const metadata = JSON.parse(faceMetadata);
+        confidence = metadata.confidence || 0;
+        livenessScore = metadata.livenessScore || 0;
+      } catch (e) {
+        console.error("Error parsing face metadata:", e);
+      }
+    }
+
+    // Update face data
+    kyc.biometricData.faceData = {
+      imageUrl: securePath,
+      verificationStatus: "pending",
+      confidence: confidence,
+      livenessScore: livenessScore,
+      uploadedAt: new Date(),
+      fileType: file.mimetype,
+      fileSize: file.size,
+    };
+
+    // Mark face verification step as completed if liveness passed
+    if (livenessScore > 0.7) {
+      kyc.completedSteps.faceVerification = {
+        completed: true,
+        completedAt: new Date(),
+        attempts: (kyc.completedSteps.faceVerification?.attempts || 0) + 1,
+      };
+    }
+
+    // Update current step
+    kyc.updateCurrentStep();
+
+    await kyc.save();
+
+    res.json({
+      success: true,
+      data: {
+        status: "pending",
+        livenessScore: kyc.biometricData.faceData.livenessScore,
+        currentStep: kyc.currentStep,
+        completedSteps: kyc.completedSteps,
+      },
+    });
+  } catch (error) {
+    console.error("Face photo upload error:", error);
+    if (req.file?.path) {
+      await deleteFile(req.file.path);
+    }
+    res.status(500).json({
+      success: false,
+      message: "Error uploading face photo",
+    });
+  }
+};
+
+// @desc    Upload ID document for verification
 // @route   POST /api/kyc/document
 // @access  Private
-export const uploadDocument = async (req, res) => {
+export const uploadIDDocument = async (req, res) => {
   try {
     const { documentType } = req.body;
     const frontImage = req.files?.frontImage?.[0];
@@ -60,9 +177,11 @@ export const uploadDocument = async (req, res) => {
     // Find existing KYC application
     let kyc = await KYC.findOne({ userId: req.user.id });
     if (!kyc) {
-      kyc = await KYC.create({
-        userId: req.user.id,
-        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
+      await deleteFile(frontImage.path);
+      await deleteFile(backImage.path);
+      return res.status(404).json({
+        success: false,
+        message: "KYC application not found",
       });
     }
 
@@ -83,7 +202,7 @@ export const uploadDocument = async (req, res) => {
     await fs.rename(frontImage.path, frontPath);
     await fs.rename(backImage.path, backPath);
 
-    // Update or create document record
+    // Update document record
     const documentData = {
       type: documentType,
       frontImageUrl: frontPath,
@@ -106,7 +225,7 @@ export const uploadDocument = async (req, res) => {
     // Mark document verification step as pending
     kyc.completedSteps.documentVerification = {
       completed: false,
-      attempts: (kyc.completedSteps.documentVerification.attempts || 0) + 1
+      attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1
     };
 
     // Update current step
@@ -117,7 +236,6 @@ export const uploadDocument = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        kycId: kyc._id,
         documentType,
         verificationStatus: "pending",
         currentStep: kyc.currentStep,
@@ -136,262 +254,86 @@ export const uploadDocument = async (req, res) => {
   }
 };
 
-// @desc    Upload biometric data
-// @route   POST /api/kyc/biometric
+// @desc    Upload video for verification
+// @route   POST /api/kyc/video
 // @access  Private
-export const uploadBiometric = async (req, res) => {
+export const uploadVideo = async (req, res) => {
   try {
-    const { type, faceMetadata } = req.body; // 'face' or 'idCard'
-    const file = req.file;
+    const { idNumber, idType, completedActions } = req.body;
+    const videoFile = req.file;
 
-    if (!file) {
+    if (!videoFile || !idNumber || !idType) {
+      if (videoFile) await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
-        message: "No file uploaded",
+        message: "Missing required fields or video file",
       });
     }
 
     // Validate file type
-    const allowedTypes = {
-      face: ["image/jpeg", "image/png"],
-      idCard: ["image/jpeg", "image/png"],
-    };
-
-    if (!allowedTypes[type]?.includes(file.mimetype)) {
-      await deleteFile(file.path);
+    const allowedTypes = ["video/webm", "video/mp4"];
+    if (!allowedTypes.includes(videoFile.mimetype)) {
+      await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
-        message: `Invalid file type. Allowed types for ${type}: ${allowedTypes[
-          type
-        ]?.join(", ")}`,
+        message: "Invalid file type. Only WebM and MP4 are allowed",
       });
     }
 
-    // Validate file size
-    const maxSizes = {
-      face: 5 * 1024 * 1024, // 5MB
-      idCard: 10 * 1024 * 1024, // 10MB
-    };
-
-    if (file.size > maxSizes[type]) {
-      await deleteFile(file.path);
+    // Validate file size (max 50MB)
+    const maxSize = 50 * 1024 * 1024;
+    if (videoFile.size > maxSize) {
+      await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
-        message: `File too large. Maximum size for ${type}: ${
-          maxSizes[type] / (1024 * 1024)
-        }MB`,
+        message: "File too large. Maximum size: 50MB",
       });
     }
 
-    // Find existing KYC application or create a new one
-    let kyc = await KYC.findOne({
-      userId: req.user.id,
-    });
-
+    // Find existing KYC application
+    let kyc = await KYC.findOne({ userId: req.user.id });
     if (!kyc) {
-      kyc = await KYC.create({
-        userId: req.user.id,
-        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
-      });
-    } else if (kyc.status === "approved") {
-      // Don't allow updates to approved KYC applications
-      await deleteFile(file.path);
-      return res.status(400).json({
+      await deleteFile(videoFile.path);
+      return res.status(404).json({
         success: false,
-        message: "KYC application is already approved and cannot be modified",
+        message: "KYC application not found",
       });
     }
 
     // Generate secure filename
-    const fileExtension = path.extname(file.originalname);
-    const secureFilename = `${crypto
-      .randomBytes(16)
-      .toString("hex")}${fileExtension}`;
+    const fileExtension = path.extname(videoFile.originalname);
+    const secureFilename = `${crypto.randomBytes(16).toString("hex")}${fileExtension}`;
 
     // Create secure storage path
-    const storageDir = path.join(process.cwd(), "storage", "biometric", type);
+    const storageDir = path.join(process.cwd(), "storage", "biometric", "video");
     await fs.mkdir(storageDir, { recursive: true });
 
     // Move file to secure location
     const securePath = path.join(storageDir, secureFilename);
-    await fs.rename(file.path, securePath);
+    await fs.rename(videoFile.path, securePath);
 
-    // Update biometric data based on type
-    if (type === "face") {
-      // Delete old file if exists
-      if (kyc.biometricData.faceData?.imageUrl) {
-        await deleteFile(kyc.biometricData.faceData.imageUrl);
-      }
-
-      // Process face metadata if available
-      let livenessScore = 0;
-      let confidence = 0;
-
-      if (faceMetadata) {
-        try {
-          const metadata = JSON.parse(faceMetadata);
-          confidence = metadata.confidence || 0;
-
-          // Simulate liveness detection here
-          // In a real implementation, you would call a liveness detection API
-          livenessScore = Math.random() * 0.5 + 0.5; // Random score between 0.5 and 1.0
-
-          // Update liveness check status
-          kyc.livenessCheck = {
-            status: livenessScore > 0.7 ? "passed" : "failed",
-            timestamp: new Date(),
-            score: livenessScore,
-          };
-        } catch (e) {
-          console.error("Error parsing face metadata:", e);
-        }
-      }
-
-      kyc.biometricData.faceData = {
-        imageUrl: securePath,
-        verificationStatus: "pending",
-        confidence: confidence,
-        livenessScore: livenessScore,
-        uploadedAt: new Date(),
-        fileType: file.mimetype,
-        fileSize: file.size,
-      };
-
-      // Mark face verification step as completed if liveness passed
-      if (livenessScore > 0.7) {
-        kyc.completedSteps.faceVerification = {
-          completed: true,
-          completedAt: new Date(),
-          attempts: (kyc.completedSteps.faceVerification.attempts || 0) + 1,
-        };
-      }
-    } else if (type === "idCard") {
-      // For ID card, we might want to perform OCR
-      // Delete old file if exists
-      if (kyc.documents?.[0]?.frontImageUrl) {
-        await deleteFile(kyc.documents[0].frontImageUrl);
-      }
-
-      // In a real implementation, you would call an OCR API here
-      // For now, we'll just store the image
-      if (!kyc.documents || kyc.documents.length === 0) {
-        kyc.documents = [
-          {
-            type: "nationalId", // Default type if not specified
-            frontImageUrl: securePath,
-            verificationStatus: "pending",
-          },
-        ];
-      } else {
-        kyc.documents[0].frontImageUrl = securePath;
-        kyc.documents[0].verificationStatus = "pending";
-      }
-
-      // The OCR step won't mark as complete yet - that happens in the processOCR method
-    }
-
-    // Update current step based on completed steps
-    kyc.updateCurrentStep();
-
-    // If all steps are completed, change status to pending review
-    if (
-      kyc.completedSteps.faceVerification.completed &&
-      kyc.completedSteps.documentVerification.completed &&
-      kyc.completedSteps.videoVerification.completed
-    ) {
-      kyc.status = "pending";
-    }
-
-    await kyc.save();
-
-    res.json({
-      success: true,
-      data: {
-        type,
-        status: "pending",
-        uploadedAt: new Date(),
-        livenessScore:
-          type === "face"
-            ? kyc.biometricData.faceData.livenessScore
-            : undefined,
-        currentStep: kyc.currentStep,
-        completedSteps: kyc.completedSteps,
-      },
-    });
-  } catch (error) {
-    console.error("Biometric upload error:", error);
-    // Clean up file if it exists
-    if (req.file?.path) {
-      await deleteFile(req.file.path);
-    }
-    res.status(500).json({
-      success: false,
-      message: "Error uploading biometric data",
-    });
-  }
-};
-
-// @desc    Process OCR for ID card
-// @route   POST /api/kyc/ocr
-// @access  Private
-export const processOCR = async (req, res) => {
-  try {
-    const { documentId } = req.body;
-
-    // Find the KYC record
-    const kyc = await KYC.findOne({
-      userId: req.user.id,
-    });
-
-    if (!kyc || !kyc.documents || kyc.documents.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No KYC application or documents found",
-      });
-    }
-
-    if (kyc.status === "approved") {
-      return res.status(400).json({
-        success: false,
-        message: "KYC application is already approved and cannot be modified",
-      });
-    }
-
-    // In a real implementation, you would retrieve OCR results from a service
-    // For now, we'll return mockup data
-    const ocrResults = {
-      documentNumber: "OCR-123456789",
-      name: "John Doe",
-      dateOfBirth: "1990-01-01",
-      issueDate: "2020-01-01",
-      expiryDate: "2030-01-01",
-      issuingCountry: "USA",
-    };
-
-    // Update document with OCR results
-    kyc.documents[0].documentNumber = ocrResults.documentNumber;
-    kyc.documents[0].issueDate = new Date(ocrResults.issueDate);
-    kyc.documents[0].expiryDate = new Date(ocrResults.expiryDate);
-    kyc.documents[0].issuingCountry = ocrResults.issuingCountry;
-
-    // Store OCR data
-    kyc.documents[0].ocrData = {
-      extractedFields: ocrResults,
-      confidence: 0.95, // Simulated confidence score
-      processedAt: new Date(),
+    // Update video data
+    kyc.biometricData.videoData = {
+      videoUrl: securePath,
+      verificationStatus: "pending",
+      uploadedAt: new Date(),
+      fileType: videoFile.mimetype,
+      fileSize: videoFile.size,
+      completedActions: completedActions ? JSON.parse(completedActions) : [],
     };
 
     // Update personal info
     if (!kyc.personalInfo) {
       kyc.personalInfo = {};
     }
-    kyc.personalInfo.dateOfBirth = new Date(ocrResults.dateOfBirth);
+    kyc.personalInfo.idNumber = idNumber;
+    kyc.personalInfo.idType = idType;
 
-    // Mark document verification step as completed
-    kyc.completedSteps.documentVerification = {
+    // Mark video verification step as completed
+    kyc.completedSteps.videoVerification = {
       completed: true,
       completedAt: new Date(),
-      attempts: (kyc.completedSteps.documentVerification.attempts || 0) + 1,
+      attempts: (kyc.completedSteps.videoVerification?.attempts || 0) + 1,
     };
 
     // Update current step
@@ -399,9 +341,9 @@ export const processOCR = async (req, res) => {
 
     // If all steps are completed, change status to pending review
     if (
-      kyc.completedSteps.faceVerification.completed &&
-      kyc.completedSteps.documentVerification.completed &&
-      kyc.completedSteps.videoVerification.completed
+      kyc.completedSteps.faceVerification?.completed &&
+      kyc.completedSteps.documentVerification?.completed &&
+      kyc.completedSteps.videoVerification?.completed
     ) {
       kyc.status = "pending";
     }
@@ -411,16 +353,19 @@ export const processOCR = async (req, res) => {
     res.json({
       success: true,
       data: {
-        ...ocrResults,
+        status: kyc.status,
         currentStep: kyc.currentStep,
         completedSteps: kyc.completedSteps,
       },
     });
   } catch (error) {
-    console.error("OCR processing error:", error);
+    console.error("Video upload error:", error);
+    if (req.file?.path) {
+      await deleteFile(req.file.path);
+    }
     res.status(500).json({
       success: false,
-      message: "Error processing OCR",
+      message: "Error uploading video",
     });
   }
 };
@@ -478,24 +423,24 @@ export const getLivenessChallenge = async (req, res) => {
 // @access  Private
 export const getKYCStatus = async (req, res) => {
   try {
-    const kyc = await KYC.findOne({ userId: req.user.id })
+    let kyc = await KYC.findOne({ userId: req.user.id })
       .select(
         "-biometricData.faceData.imageUrl -biometricData.videoData.videoUrl -documents.frontImageUrl -documents.backImageUrl"
       )
       .sort({ createdAt: -1 });
 
     if (!kyc) {
-      return res.status(404).json({
-        success: false,
-        message: "No KYC application found",
-        data: {
-          currentStep: 1,
-          completedSteps: {
-            faceVerification: { completed: false },
-            documentVerification: { completed: false },
-            videoVerification: { completed: false },
-          },
+      // Create new KYC application if none exists
+      kyc = await KYC.create({
+        userId: req.user.id,
+        status: 'pending',
+        currentStep: 1,
+        completedSteps: {
+          faceVerification: { completed: false },
+          documentVerification: { completed: false },
+          videoVerification: { completed: false },
         },
+        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
       });
     }
 

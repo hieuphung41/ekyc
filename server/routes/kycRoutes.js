@@ -1,8 +1,7 @@
 import express from "express";
 import {
-  uploadDocument,
-  uploadBiometric,
-  processOCR,
+  uploadFacePhoto,
+  uploadIDDocument,
   getLivenessChallenge,
   getKYCStatus,
   verifyKYC,
@@ -10,6 +9,7 @@ import {
   getAllKYC,
   uploadVoiceSample,
   verifyVoiceSample,
+  uploadVideo
 } from "../controllers/kycController.js";
 import { protect, authorize } from "../middlewares/auth.js";
 import { uploadMiddleware } from "../utils/fileUpload.js";
@@ -24,18 +24,23 @@ router.post(
     { name: "frontImage", maxCount: 1 },
     { name: "backImage", maxCount: 1 },
   ]),
-  uploadDocument
+  uploadIDDocument
 );
-
-// OCR processing route
-router.post("/ocr", protect, processOCR);
 
 // Biometric verification routes
 router.post(
-  "/biometric",
+  "/face",
   protect,
   uploadMiddleware.single("file"),
-  uploadBiometric
+  uploadFacePhoto
+);
+
+// Video verification routes
+router.post(
+  "/video",
+  protect,
+  uploadMiddleware.single("videoFile"),
+  uploadVideo
 );
 
 // Voice verification routes

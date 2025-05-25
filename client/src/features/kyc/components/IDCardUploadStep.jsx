@@ -5,12 +5,15 @@ import {
   DocumentTextIcon,
   CheckCircleIcon,
 } from "@heroicons/react/24/solid";
+import { uploadIDCard } from "../kycSlice";
+import { useDispatch } from "react-redux";
 
 const IDCardUploadStep = ({ onNext, onError, setLoading }) => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [ocrData, setOcrData] = useState(null);
   const [processingOcr, setProcessingOcr] = useState(false);
+  const dispatch = useDispatch();
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -32,25 +35,23 @@ const IDCardUploadStep = ({ onNext, onError, setLoading }) => {
       setLoading(true);
       const formData = new FormData();
       formData.append("file", selectedFile);
-      formData.append("type", "idCard");
+      formData.append("frontImage", selectedFile);
 
-      const response = await axiosInstance.post(
-        "/kyc/biometric",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const result = await dispatch(uploadIDCard(formData));
 
-      if (response.data.success) {
-        // After successful upload, trigger OCR processing
-        await processOCR();
+      if (!result.error) {
+        // After successful upload, trigger OCR processing (if needed based on backend response)
+        // Assuming OCR is triggered on the backend after successful upload, or requires a separate step
+        // If OCR needs a separate frontend trigger after upload, call processOCR here.
+        // For now, we proceed assuming the upload is sufficient for this step.
+        onNext("ID document uploaded. Processing..."); // Indicate upload is done and processing will follow
+      } else {
+        onError(result.payload?.message || "Failed to upload ID card");
       }
     } catch (error) {
       console.error("Error uploading ID card:", error);
-      onError(error.response?.data?.message || "Failed to upload ID card");
+      onError(error.message || "Failed to upload ID card");
+    } finally {
       setLoading(false);
     }
   };

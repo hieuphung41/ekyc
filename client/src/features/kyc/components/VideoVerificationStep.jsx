@@ -5,6 +5,9 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/solid";
+import { uploadVideo } from "../kycSlice";
+import { checkDeviceAvailability } from "../../../utils/deviceCheck";
+import { useDispatch } from "react-redux";
 
 const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
   const [idNumber, setIdNumber] = useState("");
@@ -15,6 +18,10 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
   const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isModelLoading, setIsModelLoading] = useState(false);
+  const [deviceStatus, setDeviceStatus] = useState({
+    camera: true,
+    microphone: true
+  });
 
   const [livenessActions] = useState([
     { action: "center", text: "Keep your face centered in the oval" },
@@ -28,6 +35,7 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
   const [completedActions, setCompletedActions] = useState([]);
   const [faceDetected, setFaceDetected] = useState(false);
   const [actionDetected, setActionDetected] = useState(false);
+  const dispatch = useDispatch();
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -36,6 +44,14 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
   const faceDetectionInterval = useRef(null);
 
   useEffect(() => {
+    // Check device availability on mount
+    checkDeviceAvailability().then(devices => {
+      setDeviceStatus(devices);
+      if (!devices.camera || !devices.microphone) {
+        onError("Some required devices are not available. You can skip this step if needed.");
+      }
+    });
+
     loadModels();
     return () => {
       stopRecording();
@@ -268,6 +284,14 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
     );
   };
 
+  const handleSkipStep = () => {
+    if (!idNumber || !idType) {
+      onError("Please enter your ID information before skipping this step.");
+      return;
+    }
+    onComplete("Video verification step skipped. Proceeding to completion.");
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold mb-2">Step 3: Record Face Video</h2>
@@ -275,82 +299,113 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
         Please record a short video while keeping your face inside the oval.
       </p>
 
+      {(!deviceStatus.camera || !deviceStatus.microphone) && (
+        <div className="mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
+          <div className="flex">
+            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400 mr-2 flex-shrink-0" />
+            <div>
+              <p>Required devices not available:</p>
+              <ul className="list-disc list-inside mt-1">
+                {!deviceStatus.camera && <li>Camera</li>}
+                {!deviceStatus.microphone && <li>Microphone</li>}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-2xl mx-auto mb-8">
-        <div
-          className="relative bg-gray-100 rounded-lg overflow-hidden"
-          style={{ minHeight: "400px" }}
-        >
-          {recordingPreviewUrl ? (
-            <video
-              src={recordingPreviewUrl}
-              className="w-full h-full object-cover"
-              controls
-            />
-          ) : (
-            <div className="relative">
-              <video
-                ref={videoRef}
-                className="w-full h-full object-cover"
-                playsInline
-                muted
-              />
-              <canvas
-                ref={canvasRef}
-                className="absolute top-0 left-0 w-full h-full pointer-events-none"
-              />
-            </div>
-          )}
-          {isRecording && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-black bg-opacity-70">
-              {renderActionInstructions()}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-700">Progress</span>
-            <span className="text-sm text-gray-500">
-              {completedActions.length} / {livenessActions.length} actions
-              completed
-            </span>
+        {(!deviceStatus.camera || !deviceStatus.microphone) ? (
+          <div className="text-center py-8 bg-gray-50 rounded-lg">
+            <p className="text-gray-600 mb-4">
+              You can skip this step and proceed with manual verification.
+            </p>
+            <button
+              onClick={handleSkipStep}
+              className="px-6 py-3 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
+            >
+              Skip Video Verification
+            </button>
           </div>
-          <div className="relative w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+        ) : (
+          <>
             <div
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-              style={{
-                width: `${
-                  (completedActions.length / livenessActions.length) * 100
-                }%`,
-              }}
-            ></div>
-          </div>
-        </div>
+              className="relative bg-gray-100 rounded-lg overflow-hidden"
+              style={{ minHeight: "400px" }}
+            >
+              {recordingPreviewUrl ? (
+                <video
+                  src={recordingPreviewUrl}
+                  className="w-full h-full object-cover"
+                  controls
+                />
+              ) : (
+                <div className="relative">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover"
+                    playsInline
+                    muted
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                  />
+                </div>
+              )}
+              {isRecording && (
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-black bg-opacity-70">
+                  {renderActionInstructions()}
+                </div>
+              )}
+            </div>
 
-        <div className="mt-4 flex justify-center">
-          {!isRecording && !recordingComplete ? (
-            <button
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              onClick={startRecording}
-            >
-              Start Recording
-            </button>
-          ) : isRecording ? (
-            <button
-              className="w-full py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700"
-              onClick={stopRecording}
-            >
-              Stop Recording
-            </button>
-          ) : (
-            <button
-              className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              onClick={startRecording}
-            >
-              Record Again
-            </button>
-          )}
-        </div>
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">Progress</span>
+                <span className="text-sm text-gray-500">
+                  {completedActions.length} / {livenessActions.length} actions
+                  completed
+                </span>
+              </div>
+              <div className="relative w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${
+                      (completedActions.length / livenessActions.length) * 100
+                    }%`,
+                  }}
+                ></div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-center">
+              {!isRecording && !recordingComplete ? (
+                <button
+                  className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  onClick={startRecording}
+                >
+                  Start Recording
+                </button>
+              ) : isRecording ? (
+                <button
+                  className="w-full py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  onClick={stopRecording}
+                >
+                  Stop Recording
+                </button>
+              ) : (
+                <button
+                  className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  onClick={startRecording}
+                >
+                  Record Again
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mt-8">
@@ -410,21 +465,18 @@ const VideoVerificationStep = ({ onComplete, onError, setLoading }) => {
               const videoBlob = new Blob(recordedChunks, {
                 type: "video/webm",
               });
-              formData.append("faceVideo", videoBlob, "face_verification.webm");
+              formData.append("videoFile", videoBlob, "face_verification.webm");
               formData.append(
                 "completedActions",
                 JSON.stringify(completedActions)
               );
-              await axiosInstance.post(
-                "/kyc/submit",
-                formData,
-                {
-                  headers: {
-                    "Content-Type": "multipart/form-data",
-                  },
-                }
-              );
-              onComplete();
+              const result = await dispatch(uploadVideo(formData));
+
+              if (!result.error) {
+                onComplete(); // Indicate video upload and verification is complete
+              } else {
+                onError(result.payload?.message || "Video verification failed.");
+              }
             } catch (error) {
               onError(error.response?.data?.message || "Verification failed.");
             } finally {
