@@ -216,6 +216,17 @@ export const uploadIDDocument = async (req, res) => {
     await fs.rename(frontImage.path, frontPath);
     await fs.rename(backImage.path, backPath);
 
+    // Parse OCR data from request body
+    let ocrData = null;
+    if (req.body.ocrData) {
+      try {
+        ocrData = JSON.parse(req.body.ocrData);
+      } catch (error) {
+        console.error("Error parsing ocrData:", error);
+        // Optionally, return an error to the client if ocrData is required
+      }
+    }
+
     // Update document record
     const documentData = {
       type: documentType,
@@ -223,6 +234,7 @@ export const uploadIDDocument = async (req, res) => {
       backImageUrl: backPath,
       verificationStatus: "pending",
       uploadedAt: new Date(),
+      ocrResult: ocrData, // Save the parsed OCR data
     };
 
     // If document already exists, update it; otherwise add new
