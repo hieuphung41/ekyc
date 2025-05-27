@@ -3,7 +3,23 @@ import User from "../models/User.js";
 import { uploadMiddleware, deleteFile } from "../utils/fileUpload.js";
 import crypto from "crypto";
 import path from "path";
-import fs from "fs/promises";
+import fs from "fs";
+import fsp from "fs/promises";
+import axios from "axios";
+import FormData from "form-data";
+
+const UPLOAD_DIR =
+  process.env.ID_UPLOAD_DIR || path.join(process.cwd(), "public", "uploads");
+const FPT_API_KEY = process.env.FPT_AI_API_KEY || "kXmIitbsxqFi8t60QmdQaUue9y1Qk9JW";
+const ISSUING_COUNTRY_DEFAULT = process.env.ID_ISSUING_COUNTRY || "Vietnam";
+
+async function safeUnlink(filePath) {
+  try {
+    await fs.unlink(filePath);
+  } catch (err) {
+    console.warn(`Failed to delete file ${filePath}:`, err.message);
+  }
+}
 
 // @desc    Upload face photo for verification
 // @route   POST /api/kyc/face
@@ -101,11 +117,11 @@ export const uploadFacePhoto = async (req, res) => {
     await kyc.save();
 
     // Update KYC state in cookie
-    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      secure: process.env.NODE_ENV === "development",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     res.json({
@@ -132,154 +148,201 @@ export const uploadFacePhoto = async (req, res) => {
 // @desc    Upload ID document for verification
 // @route   POST /api/kyc/document
 // @access  Private
+// export const uploadIDDocument = async (req, res) => {
+//   try {
+//     const { frontImage, backImage } = req.files;
+//     const userId = req.user.id;
+
+//     // Validate file types
+//     const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
+//     if (!allowedTypes.includes(frontImage[0].mimetype) ||
+//         !allowedTypes.includes(backImage[0].mimetype)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid file format. Only PNG and JPG are allowed."
+//       });
+//     }
+
+//     // Process with FPT.AI or similar service
+//     const formData = new FormData();
+//     formData.append("image", fs.createReadStream(frontImage[0].path));
+//     formData.append("type", "identity_card");
+
+//     const apiResponse = await axios.post(
+//       process.env.ID_VERIFICATION_API_URL,
+//       formData,
+//       {
+//         headers: {
+//           "api-key": process.env.ID_VERIFICATION_API_KEY,
+//           ...formData.getHeaders(),
+//         },
+//       }
+//     );
+
+//     // Check for duplicate ID
+//     const extractedID = apiResponse.data.data[0].id;
+//     const existingKYC = await KYC.findOne({
+//       "documents.documentNumber": extractedID
+//     });
+
+//     if (existingKYC) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "This ID number has already been registered"
+//       });
+//     }
+
+//     // Update KYC document
+//     const kyc = await KYC.findOne({ userId });
+//     kyc.documents.push({
+//       type: "nationalId",
+//       documentNumber: extractedID,
+//       frontImageUrl: frontImage[0].path,
+//       backImageUrl: backImage[0].path,
+//       ocrData: {
+//         extractedFields: apiResponse.data.data[0],
+//         confidence: apiResponse.data.confidence,
+//         processedAt: new Date()
+//       }
+//     });
+
+//     await kyc.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "ID document processed successfully",
+//       data: kyc.documents[kyc.documents.length - 1]
+//     });
+//   } catch (error) {
+//     console.error("Error processing ID document:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to process ID document"
+//     });
+//   }
+// };
 export const uploadIDDocument = async (req, res) => {
   try {
-    const { documentType } = req.body;
-    const frontImage = req.files?.frontImage?.[0];
-    const backImage = req.files?.backImage?.[0];
+    const { frontImage, backImage } = req.files;
+    const userId = req.user.id;
 
-    if (!documentType || !frontImage || !backImage) {
-      // Clean up any uploaded files if validation fails
-      if (frontImage) await deleteFile(frontImage.path);
-      if (backImage) await deleteFile(backImage.path);
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields or files",
-      });
-    }
-
-    // Validate document type
-    const allowedTypes = ["passport", "nationalId", "drivingLicense"];
-    if (!allowedTypes.includes(documentType)) {
-      await deleteFile(frontImage.path);
-      await deleteFile(backImage.path);
-      return res.status(400).json({
-        success: false,
-        message: "Invalid document type",
-      });
-    }
-
-    // Validate file types
-    const allowedImageTypes = ["image/jpeg", "image/png"];
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
     if (
-      !allowedImageTypes.includes(frontImage.mimetype) ||
-      !allowedImageTypes.includes(backImage.mimetype)
+      !allowedTypes.includes(frontImage[0].mimetype) ||
+      !allowedTypes.includes(backImage[0].mimetype)
     ) {
-      await deleteFile(frontImage.path);
-      await deleteFile(backImage.path);
       return res.status(400).json({
         success: false,
-        message: "Invalid file type. Only JPEG and PNG are allowed",
+        message: "Invalid file format. Only PNG and JPG are allowed.",
       });
     }
 
-    // Validate file sizes (max 10MB each)
-    const maxSize = 10 * 1024 * 1024;
-    if (frontImage.size > maxSize || backImage.size > maxSize) {
-      await deleteFile(frontImage.path);
-      await deleteFile(backImage.path);
-      return res.status(400).json({
-        success: false,
-        message: "File too large. Maximum size: 10MB",
-      });
+    try {
+      await fsp.access(UPLOAD_DIR);
+    } catch {
+      await fsp.mkdir(UPLOAD_DIR, { recursive: true });
     }
 
-    // Find existing KYC application
-    let kyc = await KYC.findOne({ userId: req.user.id });
-    if (!kyc) {
-      await deleteFile(frontImage.path);
-      await deleteFile(backImage.path);
-      return res.status(404).json({
-        success: false,
-        message: "KYC application not found",
-      });
-    }
+    const frontFileName = `${userId}-id-front-${Date.now()}.${
+      frontImage[0].mimetype.split("/")[1]
+    }`;
+    const backFileName = `${userId}-id-back-${Date.now()}.${
+      backImage[0].mimetype.split("/")[1]
+    }`;
+    const frontFilePath = path.join(UPLOAD_DIR, frontFileName);
+    const backFilePath = path.join(UPLOAD_DIR, backFileName);
 
-    // Generate secure filenames
-    const frontExtension = path.extname(frontImage.originalname);
-    const backExtension = path.extname(backImage.originalname);
-    const frontFilename = `${crypto
-      .randomBytes(16)
-      .toString("hex")}${frontExtension}`;
-    const backFilename = `${crypto
-      .randomBytes(16)
-      .toString("hex")}${backExtension}`;
+    const frontBuffer = await fsp.readFile(frontImage[0].path);
+    const backBuffer = await fsp.readFile(backImage[0].path);
 
-    // Create secure storage paths
-    const storageDir = path.join(process.cwd(), "storage", "documents");
-    await fs.mkdir(storageDir, { recursive: true });
+    await fsp.writeFile(frontFilePath, frontBuffer);
+    await fsp.writeFile(backFilePath, backBuffer);
 
-    const frontPath = path.join(storageDir, frontFilename);
-    const backPath = path.join(storageDir, backFilename);
+    const formData = new FormData();
+    formData.append("image", fs.createReadStream(frontFilePath));
 
-    // Move files to secure location
-    await fs.rename(frontImage.path, frontPath);
-    await fs.rename(backImage.path, backPath);
-
-    // Parse OCR data from request body
-    let ocrData = null;
-    if (req.body.ocrData) {
-      try {
-        ocrData = JSON.parse(req.body.ocrData);
-      } catch (error) {
-        console.error("Error parsing ocrData:", error);
-        // Optionally, return an error to the client if ocrData is required
+    const fptResponse = await axios.post(
+      "https://api.fpt.ai/vision/idr/vnm",
+      formData,
+      {
+        headers: {
+          "api-key": FPT_API_KEY,
+          ...formData.getHeaders(),
+        },
       }
-    }
+    );
 
-    // Update document record
-    const documentData = {
-      type: documentType,
-      frontImageUrl: frontPath,
-      backImageUrl: backPath,
-      verificationStatus: "pending",
-      uploadedAt: new Date(),
-      ocrResult: ocrData, // Save the parsed OCR data
-    };
+    const fptData = fptResponse.data;
 
-    // If document already exists, update it; otherwise add new
-    if (kyc.documents && kyc.documents.length > 0) {
-      // Delete old files if they exist
-      if (kyc.documents[0].frontImageUrl)
-        await deleteFile(kyc.documents[0].frontImageUrl);
-      if (kyc.documents[0].backImageUrl)
-        await deleteFile(kyc.documents[0].backImageUrl);
+    if (fptResponse.status === 200 && fptData.data && fptData.data.length > 0) {
+      const extractedID = fptData.data[0].id;
+      const extractedName = fptData.data[0].name;
+      const extractedDOB = fptData.data[0].dob;
 
-      kyc.documents[0] = documentData;
-    } else {
-      kyc.documents = [documentData];
-    }
+      const existingKYC = await KYC.findOne({
+        "documents.documentNumber": extractedID,
+      });
 
-    // Mark document verification step as pending
-    kyc.completedSteps.documentVerification = {
-      completed: false,
-      attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1,
-    };
+      if (existingKYC) {
+        await safeUnlink(frontFilePath);
+        await safeUnlink(backFilePath);
+        return res.status(400).json({
+          success: false,
+          message: "This ID number has already been registered",
+        });
+      }
 
-    // Update current step
-    kyc.updateCurrentStep();
+      const kyc = await KYC.findOne({ userId });
+      if (!kyc) {
+        await safeUnlink(frontFilePath);
+        await safeUnlink(backFilePath);
+        return res.status(404).json({
+          success: false,
+          message: "KYC application not found",
+        });
+      }
 
-    await kyc.save();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        documentType,
+      kyc.documents.push({
+        type: "nationalId",
+        documentNumber: extractedID,
+        issuingCountry: ISSUING_COUNTRY_DEFAULT,
+        frontImageUrl: `/uploads/${frontFileName}`,
+        backImageUrl: `/uploads/${backFileName}`,
         verificationStatus: "pending",
-        currentStep: kyc.currentStep,
-        completedSteps: kyc.completedSteps,
-      },
-    });
+        ocrData: {
+          extractedFields: fptData.data[0],
+          confidence: fptData.confidence || 1,
+          processedAt: new Date(),
+        },
+      });
+
+      kyc.completedSteps.documentVerification = {
+        completed: true,
+        completedAt: new Date(),
+        attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1,
+      };
+
+      await kyc.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "ID document processed successfully",
+        data: kyc.documents[kyc.documents.length - 1],
+      });
+    } else {
+      await safeUnlink(frontFilePath);
+      await safeUnlink(backFilePath);
+      return res.status(400).json({
+        success: false,
+        message: "ID document verification failed",
+      });
+    }
   } catch (error) {
-    console.error("Document upload error:", error);
-    // Clean up files if they exist
-    if (req.files?.frontImage?.[0]?.path)
-      await deleteFile(req.files.frontImage[0].path);
-    if (req.files?.backImage?.[0]?.path)
-      await deleteFile(req.files.backImage[0].path);
-    res.status(500).json({
+    console.error("Error processing ID document:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error uploading document images",
+      message: "Failed to process ID document",
+      error: error.message,
     });
   }
 };
@@ -487,11 +550,11 @@ export const getKYCStatus = async (req, res) => {
     }
 
     // Set KYC state in cookie
-    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      secure: process.env.NODE_ENV === "development",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     res.json({
@@ -645,11 +708,11 @@ export const resetKycStep = async (req, res) => {
     await kyc.save();
 
     // Update KYC state in cookie
-    res.cookie('kycCompletedSteps', JSON.stringify(kyc.completedSteps), {
+    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      secure: process.env.NODE_ENV === "development",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     res.json({
