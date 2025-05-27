@@ -546,9 +546,7 @@ export const uploadVideo = async (req, res) => {
         kyc.completedSteps.documentVerification?.completed &&
         kyc.completedSteps.videoVerification?.completed
       ) {
-        // Status will be automatically updated to "approved" by the pre-save middleware
-        kyc.status = "pending";
-        
+        // Let the pre-save middleware handle the status update
         // Update user's verification status
         await User.findByIdAndUpdate(userId, {
           isVerified: true,
@@ -670,6 +668,30 @@ export const getKYCStatus = async (req, res) => {
         },
         expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
       });
+    }
+
+    // Check if all steps are completed and update status if needed
+    const allStepsCompleted = 
+      kyc.completedSteps.faceVerification?.completed &&
+      kyc.completedSteps.documentVerification?.completed &&
+      kyc.completedSteps.videoVerification?.completed;
+
+    if (allStepsCompleted && kyc.status === "pending") {
+      kyc.status = "approved";
+      kyc.verificationHistory.push({
+        action: "auto_approval",
+        status: "approved",
+        notes: "All verification steps completed successfully",
+        timestamp: new Date()
+      });
+
+      // Update user's verification status
+      await User.findByIdAndUpdate(req.user.id, {
+        isVerified: true,
+        verificationStatus: "approved"
+      });
+
+      await kyc.save();
     }
 
     // Set KYC state in cookie

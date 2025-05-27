@@ -30,6 +30,12 @@ const Navbar = () => {
           <div className="flex items-center">
             {isAuthenticated ? (
               <div className="flex items-center space-x-4">
+                <Link
+                  to="/profile"
+                  className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  Profile
+                </Link>
                 <span className="text-gray-700">
                   Welcome, {user?.firstName}
                 </span>
