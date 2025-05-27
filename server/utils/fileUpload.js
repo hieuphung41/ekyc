@@ -63,7 +63,7 @@ if (hasCloudinaryCredentials) {
 // File filter function with detailed error handling
 const fileFilter = (req, file, cb) => {
   // Allow different file types based on the fieldname
-  if (file.fieldname === "faceVideo") {
+  if (file.fieldname === "faceVideo" || file.fieldname === "videoFile") {
     // Video files for face verification
     if (
       file.mimetype.startsWith("video/") ||

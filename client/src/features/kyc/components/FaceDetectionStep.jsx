@@ -242,6 +242,11 @@ const FaceDetectionStep = ({ onNext, onError }) => {
 
     console.log("Starting face detection interval...");
     faceDetectionInterval.current = setInterval(async () => {
+      if (!videoRef.current || !videoRef.current.readyState) {
+        console.log("Video element not ready");
+        return;
+      }
+
       if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
         try {
           console.log("Attempting face detection...");
@@ -327,15 +332,17 @@ const FaceDetectionStep = ({ onNext, onError }) => {
             const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw face box
-            const drawOptions = new faceapi.draw.DrawOptions({
-              labelSize: 20,
-              lineWidth: 2,
-              boxColor: isCentered ? '#00ff00' : '#ff0000'
+            // Draw face box with custom color
+            resizedDetections.forEach(detection => {
+              const box = detection.detection.box;
+              const drawBox = new faceapi.draw.DrawBox(box, {
+                label: `Face (${Math.round(detection.detection.score * 100)}%)`,
+                boxColor: isCentered ? '#00ff00' : '#ff0000',
+                lineWidth: 2,
+                labelSize: 20
+              });
+              drawBox.draw(canvas);
             });
-
-            // Draw a custom face box
-            new faceapi.draw.DrawBox(faceBox, drawOptions).draw(canvas);
 
             // Draw landmarks
             faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);

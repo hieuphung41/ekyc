@@ -22,7 +22,7 @@ const IDCardUploadStep = ({ onNext, onError }) => {
 
   useEffect(() => {
     if (success) {
-      onNext(success);
+      onNext();
     }
   }, [success, onNext]);
 
@@ -91,7 +91,7 @@ const IDCardUploadStep = ({ onNext, onError }) => {
     };
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!frontFile || !backFile) {
       onError("Please upload both sides of the ID card");
       return;
@@ -106,7 +106,14 @@ const IDCardUploadStep = ({ onNext, onError }) => {
     formData.append("frontImage", frontFile);
     formData.append("backImage", backFile);
 
-    dispatch(uploadIDCard(formData));
+    try {
+      const result = await dispatch(uploadIDCard(formData));
+      if (!result.error) {
+        onNext();
+      }
+    } catch (error) {
+      onError(error.message || "Failed to upload ID card");
+    }
   };
 
   const handleDeleteImage = (side) => {

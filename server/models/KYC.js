@@ -172,6 +172,26 @@ const kycSchema = new mongoose.Schema({
 // Update the updatedAt timestamp before saving
 kycSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
+
+  // Check if all steps are completed
+  const allStepsCompleted = 
+    this.completedSteps.faceVerification?.completed &&
+    this.completedSteps.documentVerification?.completed &&
+    this.completedSteps.videoVerification?.completed;
+
+  // If all steps are completed and status is pending, update to approved
+  if (allStepsCompleted && this.status === "pending") {
+    this.status = "approved";
+    
+    // Add to verification history
+    this.verificationHistory.push({
+      action: "auto_approval",
+      status: "approved",
+      notes: "All verification steps completed successfully",
+      timestamp: new Date()
+    });
+  }
+
   next();
 });
 

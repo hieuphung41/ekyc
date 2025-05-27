@@ -66,15 +66,15 @@ const KYCVerification = () => {
   // Handle navigation when KYC is approved
   useEffect(() => {
     if (status === "approved") {
-      navigate("/dashboard");
+      navigate("/");
     }
   }, [status, navigate]);
 
   // Progress to next step
-  const handleNextStep = (successMessage = "") => {
-    if (successMessage) {
-      dispatch(clearError());
-    }
+  const handleNextStep = () => {
+    dispatch(clearError());
+    dispatch(clearSuccess());
+    dispatch(getKYCStatus()); // Refresh KYC status after step completion
   };
 
   // Handle errors across components
@@ -84,7 +84,12 @@ const KYCVerification = () => {
 
   // Reset a step to try again
   const handleResetStep = async (stepKey) => {
-    dispatch(resetKYCStep(stepKey));
+    try {
+      await dispatch(resetKYCStep(stepKey));
+      dispatch(getKYCStatus()); // Refresh KYC status after reset
+    } catch (error) {
+      console.error("Error resetting step:", error);
+    }
   };
 
   // Show loading indicator while fetching status
@@ -114,7 +119,7 @@ const KYCVerification = () => {
             </p>
 
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate("/")}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Return to Dashboard
