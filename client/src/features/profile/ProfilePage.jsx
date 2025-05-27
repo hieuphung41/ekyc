@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   UserCircleIcon,
   IdentificationIcon,
@@ -123,64 +123,52 @@ const ProfilePage = () => {
 
             {/* Verification Steps */}
             <div className="space-y-4">
-              <h3 className="font-medium text-gray-700">Verification Steps</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <UserCircleIcon className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Face Verification</span>
+              <h3 className="text-lg font-semibold">Verification Steps</h3>
+              <div className="space-y-2">
+                <Link
+                  to="/profile/face-verification"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(completedSteps?.faceVerification?.completed)}
+                    <span>Face Verification</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {completedSteps?.faceVerification?.completed ? (
-                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                    ) : (
-                      <XCircleIcon className="h-5 w-5 text-red-500" />
-                    )}
-                    <span className="text-sm text-gray-600">
-                      {completedSteps?.faceVerification?.completed
-                        ? "Completed"
-                        : "Pending"}
-                    </span>
-                  </div>
-                </div>
+                  <span className="text-sm text-gray-500">
+                    {completedSteps?.faceVerification?.completed
+                      ? `Completed on ${new Date(completedSteps.faceVerification.completedAt).toLocaleDateString()}`
+                      : 'Not completed'}
+                  </span>
+                </Link>
 
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <IdentificationIcon className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Document Verification</span>
+                <Link
+                  to="/profile/document-verification"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(completedSteps?.documentVerification?.completed)}
+                    <span>Document Verification</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {completedSteps?.documentVerification?.completed ? (
-                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                    ) : (
-                      <XCircleIcon className="h-5 w-5 text-red-500" />
-                    )}
-                    <span className="text-sm text-gray-600">
-                      {completedSteps?.documentVerification?.completed
-                        ? "Completed"
-                        : "Pending"}
-                    </span>
-                  </div>
-                </div>
+                  <span className="text-sm text-gray-500">
+                    {completedSteps?.documentVerification?.completed
+                      ? `Completed on ${new Date(completedSteps.documentVerification.completedAt).toLocaleDateString()}`
+                      : 'Not completed'}
+                  </span>
+                </Link>
 
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <ClockIcon className="h-5 w-5 text-blue-500" />
-                    <span className="font-medium">Video Verification</span>
+                <Link
+                  to="/profile/video-verification"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(completedSteps?.videoVerification?.completed)}
+                    <span>Video Verification</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {completedSteps?.videoVerification?.completed ? (
-                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
-                    ) : (
-                      <XCircleIcon className="h-5 w-5 text-red-500" />
-                    )}
-                    <span className="text-sm text-gray-600">
-                      {completedSteps?.videoVerification?.completed
-                        ? "Completed"
-                        : "Pending"}
-                    </span>
-                  </div>
-                </div>
+                  <span className="text-sm text-gray-500">
+                    {completedSteps?.videoVerification?.completed
+                      ? `Completed on ${new Date(completedSteps.videoVerification.completedAt).toLocaleDateString()}`
+                      : 'Not completed'}
+                  </span>
+                </Link>
               </div>
             </div>
           </div>

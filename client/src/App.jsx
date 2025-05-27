@@ -11,6 +11,9 @@ import Dashboard from './features/dashboard/Dashboard';
 import ProfilePage from './features/profile/ProfilePage';
 import PrivateRoute from './components/PrivateRoute';
 import Navbar from './components/NavBar';
+import FaceVerificationPage from './features/profile/FaceVerificationPage';
+import DocumentVerificationPage from './features/profile/DocumentVerificationPage';
+import VideoVerificationPage from './features/profile/VideoVerificationPage';
 
 function AppContent() {
   const dispatch = useDispatch();
@@ -29,6 +32,9 @@ function AppContent() {
             <Route path="/register" element={<Register />} />
             <Route path="/kyc" element={<PrivateRoute><KYCVerification /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
+            <Route path="/profile/face-verification" element={<PrivateRoute><FaceVerificationPage /></PrivateRoute>} />
+            <Route path="/profile/document-verification" element={<PrivateRoute><DocumentVerificationPage /></PrivateRoute>} />
+            <Route path="/profile/video-verification" element={<PrivateRoute><VideoVerificationPage /></PrivateRoute>} />
             <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           </Routes>
         </main>
