@@ -1,4 +1,5 @@
-/storage/biometric/
+/storage/biometric
+/storage/documents
 /uploads
 node_modules/
 .env
