@@ -2,6 +2,8 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { useEffect } from 'react';
 import { checkAuth } from '../features/auth/authSlice';
+// Import the checkAuth action for API clients if you create one
+// import { checkApiClientAuth } from '../features/apiClient/apiClientSlice';
 
 const PrivateRoute = ({ children }) => {
   const { isAuthenticated, loading } = useSelector((state) => state.auth);

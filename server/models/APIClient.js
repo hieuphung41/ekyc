@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 const apiClientSchema = new mongoose.Schema({
   name: {
@@ -29,10 +30,47 @@ const apiClientSchema = new mongoose.Schema({
     email: String,
     phone: String,
   },
+  representative: {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
+    password: {
+      type: String,
+      required: true,
+    },
+    firstName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    phoneNumber: {
+      type: String,
+      trim: true,
+    }
+  },
   permissions: [
     {
       type: String,
-      enum: ["register", "verify", "query"],
+      enum: [
+        "register", 
+        "verify", 
+        "query",
+        "ekyc_register",
+        "ekyc_verify",
+        "ekyc_query",
+        "ekyc_face_verify",
+        "ekyc_voice_verify",
+        "ekyc_document_verify"
+      ],
       required: true,
     },
   ],
@@ -40,6 +78,19 @@ const apiClientSchema = new mongoose.Schema({
     type: String,
     enum: ["active", "inactive", "suspended"],
     default: "active",
+  },
+  ekycConfig: {
+    allowedVerificationMethods: {
+      face: { type: Boolean, default: false },
+      voice: { type: Boolean, default: false },
+      document: { type: Boolean, default: false }
+    },
+    maxVerificationAttempts: { type: Number, default: 3 },
+    verificationTimeout: { type: Number, default: 300 }, // in seconds
+    allowedDocumentTypes: [{
+      type: String,
+      enum: ["id_card", "passport", "driver_license"]
+    }]
   },
   ipWhitelist: [
     {
@@ -94,8 +145,19 @@ const apiClientSchema = new mongoose.Schema({
 });
 
 // Update timestamp before saving
-apiClientSchema.pre("save", function (next) {
+apiClientSchema.pre("save", async function (next) {
   this.updatedAt = Date.now();
+  
+  // Hash password if it's modified
+  if (this.representative && this.isModified('representative.password')) {
+    try {
+      const salt = await bcrypt.genSalt(10);
+      this.representative.password = await bcrypt.hash(this.representative.password, salt);
+    } catch (error) {
+      return next(error);
+    }
+  }
+  
   next();
 });
 
@@ -105,6 +167,15 @@ apiClientSchema.methods.validateCredentials = function (
   clientSecret
 ) {
   return this.clientId === clientId && this.clientSecret === clientSecret;
+};
+
+// Method to validate representative credentials
+apiClientSchema.methods.validateRepresentativeCredentials = async function (
+  email,
+  password
+) {
+  if (this.representative.email !== email) return false;
+  return bcrypt.compare(password, this.representative.password);
 };
 
 // Method to check if IP is whitelisted

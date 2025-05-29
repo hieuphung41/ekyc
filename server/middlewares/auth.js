@@ -1,10 +1,10 @@
 import { verifyToken } from "../utils/jwt.js";
 import User from "../models/User.js";
+import APIClient from "../models/APIClient.js";
 
 export const protect = async (req, res, next) => {
   try {
-    // Get token from cookie
-    const token = req.cookies.auth_token;
+    const token = req.cookies.auth_token || req.cookies.auth_token_apiclient || req.headers.authorization?.split(' ')[1];
 
     if (!token) {
       return res.status(401).json({
@@ -13,19 +13,28 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // Verify token
     const decoded = verifyToken(token);
 
-    // Get user from token
-    const user = await User.findById(decoded.id).select("-password");
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "User not found",
-      });
+    if (decoded.role === 'api-client') {
+      const apiClient = await APIClient.findById(decoded.id);
+      if (!apiClient) {
+        return res.status(401).json({
+          success: false,
+          message: "API client not found",
+        });
+      }
+      req.apiClient = apiClient;
+    } else {
+      const user = await User.findById(decoded.id).select("-password");
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+      req.user = user;
     }
 
-    req.user = user;
     next();
   } catch (error) {
     return res.status(401).json({
@@ -38,38 +47,20 @@ export const protect = async (req, res, next) => {
 export const authorize = (...roles) => {
   return async (req, res, next) => {
     try {
-      // Get token from cookie
-      const token = req.cookies.auth_token;
-
-      if (!token) {
+      if (!req.user) {
         return res.status(401).json({
           success: false,
           message: "Not authorized to access this route",
         });
       }
 
-      // Verify token
-      const decoded = verifyToken(token);
-
-      // Get user from token
-      const user = await User.findById(decoded.id).select("-password");
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: "User not found",
-        });
-      }
-
-      // Check if user's role is authorized
-      if (!roles.includes(user.role)) {
+      if (!roles.includes(req.user.role)) {
         return res.status(403).json({
           success: false,
-          message: `User role ${user.role} is not authorized to access this route`,
+          message: `User role ${req.user.role} is not authorized to access this route`,
         });
       }
 
-      // Attach user to request
-      req.user = user;
       next();
     } catch (error) {
       return res.status(401).json({
@@ -79,3 +70,51 @@ export const authorize = (...roles) => {
     }
   };
 };
+
+export const checkEkycPermission = (requiredPermission) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.apiClient) {
+        return res.status(401).json({
+          success: false,
+          message: "Not authorized to access this route",
+        });
+      }
+
+      if (!req.apiClient.permissions.includes(requiredPermission)) {
+        return res.status(403).json({
+          success: false,
+          message: `API client does not have permission: ${requiredPermission}`,
+        });
+      }
+
+      if (requiredPermission === 'ekyc_face_verify' && !req.apiClient.ekycConfig.allowedVerificationMethods.face) {
+        return res.status(403).json({
+          success: false,
+          message: "Face verification is not enabled for this client",
+        });
+      }
+      if (requiredPermission === 'ekyc_voice_verify' && !req.apiClient.ekycConfig.allowedVerificationMethods.voice) {
+        return res.status(403).json({
+          success: false,
+          message: "Voice verification is not enabled for this client",
+        });
+      }
+      if (requiredPermission === 'ekyc_document_verify' && !req.apiClient.ekycConfig.allowedVerificationMethods.document) {
+        return res.status(403).json({
+          success: false,
+          message: "Document verification is not enabled for this client",
+        });
+      }
+
+      next();
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized to access this route",
+      });
+    }
+  };
+};
+
+
