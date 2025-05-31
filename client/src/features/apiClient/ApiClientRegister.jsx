@@ -193,7 +193,7 @@ const ApiClientRegister = () => {
               {error}
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px space-y-4">
+          <div className="rounded-md shadow-sm -space-y-px">
              <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">API Client Name</label>
               <input

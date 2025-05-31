@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import { generateToken, verifyToken } from "../utils/jwt.js";
 import { uploadMiddleware, deleteFile } from "../utils/fileUpload.js";
+import APIClient from "../models/APIClient.js";
 
 // @desc    Register user
 // @route   POST /api/users/register
@@ -247,6 +248,191 @@ export const logout = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error during logout'
+    });
+  }
+};
+
+// @desc    Get all users (Admin only)
+// @route   GET /api/users
+// @access  Private/Admin
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find()
+      .select('-password')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    console.error('Get all users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching users'
+    });
+  }
+};
+
+// @desc    Get user by ID (Admin only)
+// @route   GET /api/users/:id
+// @access  Private/Admin
+export const getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Get user by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user'
+    });
+  }
+};
+
+// @desc    Update user (Admin only)
+// @route   PUT /api/users/:id
+// @access  Private/Admin
+export const updateUser = async (req, res) => {
+  try {
+    const { firstName, lastName, email, status, role } = req.body;
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update fields
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (email) user.email = email;
+    if (status) user.status = status;
+    if (role) user.role = role;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user'
+    });
+  }
+};
+
+// @desc    Delete user (Admin only)
+// @route   DELETE /api/users/:id
+// @access  Private/Admin
+export const deleteUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting user'
+    });
+  }
+};
+
+// @desc    Get admin dashboard stats
+// @route   GET /api/users/stats
+// @access  Private/Admin
+export const getAdminStats = async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ status: 'active' });
+    const totalApiClients = await APIClient.countDocuments();
+    const activeApiClients = await APIClient.countDocuments({ status: 'active' });
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        activeUsers,
+        totalApiClients,
+        activeApiClients
+      }
+    });
+  } catch (error) {
+    console.error('Get admin stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching admin stats'
+    });
+  }
+};
+
+// @desc    Create new user (Admin only)
+// @route   POST /api/users
+// @access  Private/Admin
+export const createUser = async (req, res) => {
+  try {
+    const { email, password, firstName, lastName, phoneNumber, role } = req.body;
+
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists"
+      });
+    }
+
+    // Create user
+    const user = await User.create({
+      email,
+      password,
+      firstName,
+      lastName,
+      phoneNumber,
+      role: role || 'user', // Default to 'user' if role not specified
+      isVerified: false // New users start as unverified
+    });
+
+    // Remove password from response
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.status(201).json({
+      success: true,
+      data: userResponse
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating user'
     });
   }
 };

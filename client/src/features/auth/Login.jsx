@@ -12,23 +12,21 @@ const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading, error, isAuthenticated, role } = useSelector((state) => state.auth);
+  const { loading, error, isAuthenticated, user } = useSelector((state) => state.auth);
 
-  // Get the return URL from location state or default to dashboard
+  // Get the return URL from location state or default to appropriate dashboard
   const from = location.state?.from?.pathname || '/';
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      if (role?.includes('ADMIN')) {
-        navigate('/dashboard', { replace: true });
-      } else if (role?.includes('STAFF')) {
-        navigate('/staff/dashboard', { replace: true });
+    if (isAuthenticated && user) {
+      if (user.role === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
       } else {
-        navigate(from, { replace: true });
+        navigate('/dashboard', { replace: true });
       }
     }
-  }, [isAuthenticated, role, navigate, from]);
+  }, [isAuthenticated, user, navigate]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -36,15 +34,15 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const result = await dispatch(login(formData));
-    if (!result.error) {
-      if (result.payload.user.role.includes('ADMIN')) {
-        navigate('/dashboard', { replace: true });
-      } else if (result.payload.user.role.includes('STAFF')) {
-        navigate('/staff/dashboard', { replace: true });
+    try {
+      const result = await dispatch(login(formData)).unwrap();
+      if (result.user.role === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
       } else {
-        navigate(from, { replace: true });
+        navigate('/dashboard', { replace: true });
       }
+    } catch (err) {
+      console.error('Login failed:', err);
     }
   };
 
@@ -91,7 +89,7 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
