@@ -1,41 +1,176 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import ApiClientLayout from './ApiClientLayout';
+import { getApiReport } from './apiClientSlice';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+const apiList = [
+  {
+    name: 'Passport Recognition',
+    endpoint: '/api/ekyc/passport',
+    freeRemain: 50,
+    paidRemain: 0,
+    unit: 'request',
+  },
+  {
+    name: "Driver's license recognition",
+    endpoint: '/api/ekyc/drivers-license',
+    freeRemain: 50,
+    paidRemain: 0,
+    unit: 'request',
+  },
+  {
+    name: 'ID Recognition',
+    endpoint: '/api/ekyc/recognize',
+    freeRemain: 45,
+    paidRemain: 0,
+    unit: 'request',
+  },
+  {
+    name: 'FaceMatch',
+    endpoint: '/api/ekyc/face-match',
+    freeRemain: 43,
+    paidRemain: 0,
+    unit: 'request',
+  },
+];
 
 const ApiClientDashboard = () => {
+  const dispatch = useDispatch();
+  const { apiReport, apiReportLoading } = useSelector((state) => state.apiClient);
+
+  useEffect(() => {
+    dispatch(getApiReport());
+  }, [dispatch]);
+
+  // Prepare chart data
+  const dates = apiReport?.timeSeriesData ? Object.keys(apiReport.timeSeriesData).sort() : [];
+  const trafficData = dates.map(date => (apiReport.timeSeriesData[date]?.total || 0));
+  const errorData = dates.map(date => (apiReport.timeSeriesData[date]?.failed || 0));
+  const medianLatencyData = dates.map(date => {
+    // Calculate median latency for each date from endpointStats if available
+    let latencies = [];
+    if (apiReport?.endpointStats) {
+      Object.values(apiReport.endpointStats).forEach(stat => {
+        // Simulate median as avgResponseTime for demo
+        latencies.push(stat.avgResponseTime || 0);
+      });
+    }
+    return latencies.length > 0 ? (latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0;
+  });
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      title: { display: false },
+    },
+    scales: {
+      x: {
+        ticks: { maxRotation: 60, minRotation: 60 },
+      },
+      y: {
+        beginAtZero: true,
+      },
+    },
+  };
+
   return (
     <ApiClientLayout>
       <div className="p-8">
         <h1 className="text-3xl font-bold mb-6 text-gray-800">Dashboard</h1>
-
-        {/* Graphs Section */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Traffic Graph */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-xl font-semibold mb-4 text-gray-700">Traffic</h3>
-            {/* Placeholder for Traffic Graph */}
-            <div className="h-40 bg-gray-200 flex items-center justify-center rounded">Graph Placeholder</div>
+          {/* Traffic Chart */}
+          <div>
+            <h2 className="text-lg font-semibold mb-2">Traffic</h2>
+            <div className="h-64 bg-white rounded-lg shadow p-4">
+              <Line
+                data={{
+                  labels: dates,
+                  datasets: [
+                    {
+                      label: 'Traffic',
+                      data: trafficData,
+                      borderColor: 'rgb(59, 130, 246)',
+                      backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={chartOptions}
+              />
+            </div>
           </div>
-
-          {/* Errors Graph */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-xl font-semibold mb-4 text-gray-700">Errors</h3>
-            {/* Placeholder for Errors Graph */}
-            <div className="h-40 bg-gray-200 flex items-center justify-center rounded">Graph Placeholder</div>
+          {/* Errors Chart */}
+          <div>
+            <h2 className="text-lg font-semibold mb-2">Errors</h2>
+            <div className="h-64 bg-white rounded-lg shadow p-4">
+              <Line
+                data={{
+                  labels: dates,
+                  datasets: [
+                    {
+                      label: 'Errors',
+                      data: errorData,
+                      borderColor: 'rgb(239, 68, 68)',
+                      backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={chartOptions}
+              />
+            </div>
           </div>
-
-          {/* Median Latency Graph */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-xl font-semibold mb-4 text-gray-700">Median Latency (ms)</h3>
-            {/* Placeholder for Median Latency Graph */}
-            <div className="h-40 bg-gray-200 flex items-center justify-center rounded">Graph Placeholder</div>
+          {/* Median Latency Chart */}
+          <div>
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold mb-2">Median Latency (ms)</h2>
+              {/* You can add interval/date range pickers here */}
+            </div>
+            <div className="h-64 bg-white rounded-lg shadow p-4">
+              <Line
+                data={{
+                  labels: dates,
+                  datasets: [
+                    {
+                      label: 'Median latency',
+                      data: medianLatencyData,
+                      borderColor: 'rgb(139, 92, 246)',
+                      backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                      fill: true,
+                    },
+                  ],
+                }}
+                options={chartOptions}
+              />
+            </div>
           </div>
         </div>
-
-        {/* APIs Section */}
+        {/* APIs Table */}
         <div className="bg-white p-6 rounded-lg shadow">
           <h3 className="text-xl font-semibold mb-4 text-gray-700">APIs</h3>
-          
-          {/* APIs Table */}
           <div className="overflow-x-auto">
             <table className="min-w-full leading-normal">
               <thead>
@@ -50,30 +185,28 @@ const ApiClientDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {/* Placeholder rows - replace with dynamic data */}
-                <tr>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">ID Recognition</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">47</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">request</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm"><button className="text-indigo-600 hover:text-indigo-900">buy more</button></td>
-                </tr>
-                <tr>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">FaceMatch</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">44</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">0</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">request</td>
-                  <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm"><button className="text-indigo-600 hover:text-indigo-900">buy more</button></td>
-                </tr>
-                {/* Add more rows as needed based on data */}
+                {apiList.map((api) => {
+                  // Try to get stats from apiReport.endpointStats
+                  const stats = apiReport?.endpointStats?.[api.endpoint] || { total: 0, failed: 0 };
+                  return (
+                    <tr key={api.endpoint}>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm text-blue-700 font-semibold cursor-pointer hover:underline">
+                        {api.name}
+                      </td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">{stats.total}</td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">{stats.failed}</td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">{api.freeRemain}</td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">{api.paidRemain}</td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">{api.unit}</td>
+                      <td className="px-5 py-5 border-b border-gray-200 bg-white text-sm">
+                        <a href="#" className="text-blue-600 hover:underline">buy more</a>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          {/* Pagination/Footer can be added here */}
         </div>
       </div>
     </ApiClientLayout>

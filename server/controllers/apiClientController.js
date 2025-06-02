@@ -560,3 +560,175 @@ export const logoutClient = async (req, res) => {
     });
   }
 };
+
+// @desc    Get API usage report for the authenticated client
+// @route   GET /api/clients/api-report
+// @access  Private
+export const getApiReport = async (req, res) => {
+  try {
+    const client = await APIClient.findById(req.apiClient._id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found",
+      });
+    }
+
+    // Get date range from query params (default to last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    // Get API usage data from the client's usage history
+    const usageData = client.apiUsage.filter(usage => {
+      const usageDate = new Date(usage.timestamp);
+      return usageDate >= startDate && usageDate <= endDate;
+    });
+
+    // Calculate statistics
+    const totalRequests = usageData.length;
+    const successfulRequests = usageData.filter(usage => usage.status === 'success').length;
+    const failedRequests = totalRequests - successfulRequests;
+
+    // Group by API endpoint
+    const endpointStats = usageData.reduce((acc, usage) => {
+      if (!acc[usage.endpoint]) {
+        acc[usage.endpoint] = {
+          total: 0,
+          success: 0,
+          failed: 0,
+          avgResponseTime: 0,
+          totalResponseTime: 0
+        };
+      }
+      acc[usage.endpoint].total++;
+      if (usage.status === 'success') {
+        acc[usage.endpoint].success++;
+      } else {
+        acc[usage.endpoint].failed++;
+      }
+      acc[usage.endpoint].totalResponseTime += usage.responseTime || 0;
+      acc[usage.endpoint].avgResponseTime = acc[usage.endpoint].totalResponseTime / acc[usage.endpoint].total;
+      return acc;
+    }, {});
+
+    // Group by date for time series data
+    const timeSeriesData = usageData.reduce((acc, usage) => {
+      const date = new Date(usage.timestamp).toISOString().split('T')[0];
+      if (!acc[date]) {
+        acc[date] = {
+          total: 0,
+          success: 0,
+          failed: 0
+        };
+      }
+      acc[date].total++;
+      if (usage.status === 'success') {
+        acc[date].success++;
+      } else {
+        acc[date].failed++;
+      }
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          totalRequests,
+          successfulRequests,
+          failedRequests,
+          successRate: totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0
+        },
+        endpointStats,
+        timeSeriesData,
+        dateRange: {
+          start: startDate,
+          end: endDate
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Get API report error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching API report",
+    });
+  }
+};
+
+// @desc    Get detailed API usage for a specific endpoint
+// @route   GET /api/clients/api-report/:endpoint
+// @access  Private
+export const getEndpointReport = async (req, res) => {
+  try {
+    const { endpoint } = req.params;
+    const client = await APIClient.findById(req.apiClient._id);
+    
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found",
+      });
+    }
+
+    // Get date range from query params (default to last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    // Filter usage data for the specific endpoint
+    const endpointUsage = client.apiUsage.filter(usage => {
+      const usageDate = new Date(usage.timestamp);
+      return usage.endpoint === endpoint && 
+             usageDate >= startDate && 
+             usageDate <= endDate;
+    });
+
+    // Calculate detailed statistics
+    const totalRequests = endpointUsage.length;
+    const successfulRequests = endpointUsage.filter(usage => usage.status === 'success').length;
+    const failedRequests = totalRequests - successfulRequests;
+    
+    // Calculate average response time
+    const totalResponseTime = endpointUsage.reduce((sum, usage) => sum + (usage.responseTime || 0), 0);
+    const avgResponseTime = totalRequests > 0 ? totalResponseTime / totalRequests : 0;
+
+    // Group by error type for failed requests
+    const errorStats = endpointUsage
+      .filter(usage => usage.status === 'failed')
+      .reduce((acc, usage) => {
+        const errorType = usage.errorType || 'unknown';
+        acc[errorType] = (acc[errorType] || 0) + 1;
+        return acc;
+      }, {});
+
+    res.json({
+      success: true,
+      data: {
+        endpoint,
+        summary: {
+          totalRequests,
+          successfulRequests,
+          failedRequests,
+          successRate: totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0,
+          avgResponseTime
+        },
+        errorStats,
+        usage: endpointUsage.map(usage => ({
+          timestamp: usage.timestamp,
+          status: usage.status,
+          responseTime: usage.responseTime,
+          errorType: usage.errorType,
+          requestData: usage.requestData
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Get endpoint report error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching endpoint report",
+    });
+  }
+};

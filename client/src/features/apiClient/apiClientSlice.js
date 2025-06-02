@@ -137,6 +137,33 @@ export const regenerateApiKey = createAsyncThunk(
   }
 );
 
+// API Report Thunks
+export const getApiReport = createAsyncThunk(
+  'apiClient/getApiReport',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients/api-report');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch API report');
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch API report' });
+    }
+  }
+);
+
+export const getEndpointReport = createAsyncThunk(
+  'apiClient/getEndpointReport',
+  async (endpoint, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get(`/clients/api-report/${endpoint}`);
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch endpoint report');
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch endpoint report' });
+    }
+  }
+);
+
 const initialState = {
   client: null, // Stores API client data including representative info, permissions, etc.
   isAuthenticated: false, // Indicates if an API client representative is logged in
@@ -145,7 +172,14 @@ const initialState = {
   token: null, // Storing token client-side if needed, or rely purely on httpOnly cookie
   apiKeys: [],
   apiKeysLoading: false,
-  apiKeysError: null
+  apiKeysError: null,
+  // Add API report state
+  apiReport: null,
+  apiReportLoading: false,
+  apiReportError: null,
+  endpointReport: null,
+  endpointReportLoading: false,
+  endpointReportError: null
 };
 
 const apiClientSlice = createSlice({
@@ -157,6 +191,10 @@ const apiClientSlice = createSlice({
     },
     clearApiKeysError: (state) => {
       state.apiKeysError = null;
+    },
+    clearApiReportError: (state) => {
+      state.apiReportError = null;
+      state.endpointReportError = null;
     },
     // You might add a reducer here to load client state from a stored token if not using httpOnly cookies
     // loadClientFromToken: (state, action) => { ... }
@@ -300,9 +338,39 @@ const apiClientSlice = createSlice({
       .addCase(regenerateApiKey.rejected, (state, action) => {
         state.apiKeysLoading = false;
         state.apiKeysError = action.payload?.message || 'Failed to regenerate API key';
+      })
+
+      // Get API Report
+      .addCase(getApiReport.pending, (state) => {
+        state.apiReportLoading = true;
+        state.apiReportError = null;
+      })
+      .addCase(getApiReport.fulfilled, (state, action) => {
+        state.apiReportLoading = false;
+        state.apiReport = action.payload;
+        state.apiReportError = null;
+      })
+      .addCase(getApiReport.rejected, (state, action) => {
+        state.apiReportLoading = false;
+        state.apiReportError = action.payload?.message || 'Failed to fetch API report';
+      })
+
+      // Get Endpoint Report
+      .addCase(getEndpointReport.pending, (state) => {
+        state.endpointReportLoading = true;
+        state.endpointReportError = null;
+      })
+      .addCase(getEndpointReport.fulfilled, (state, action) => {
+        state.endpointReportLoading = false;
+        state.endpointReport = action.payload;
+        state.endpointReportError = null;
+      })
+      .addCase(getEndpointReport.rejected, (state, action) => {
+        state.endpointReportLoading = false;
+        state.endpointReportError = action.payload?.message || 'Failed to fetch endpoint report';
       });
   },
 });
 
-export const { clearApiClientError, clearApiKeysError } = apiClientSlice.actions;
+export const { clearApiClientError, clearApiKeysError, clearApiReportError } = apiClientSlice.actions;
 export default apiClientSlice.reducer; 

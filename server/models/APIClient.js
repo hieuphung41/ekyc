@@ -27,6 +27,16 @@ const apiKeySchema = new mongoose.Schema({
   }
 });
 
+// Add apiUsage schema
+const apiUsageSchema = new mongoose.Schema({
+  endpoint: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+  status: { type: String, enum: ['success', 'failed'], required: true },
+  responseTime: { type: Number }, // in ms
+  errorType: { type: String },    // optional, for failed requests
+  requestData: { type: Object },  // optional, for debugging
+}, { _id: false });
+
 const apiClientSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -83,6 +93,11 @@ const apiClientSchema = new mongoose.Schema({
     }
   },
   apiKeys: [apiKeySchema],
+  // Add apiUsage array
+  apiUsage: {
+    type: [apiUsageSchema],
+    default: [],
+  },
   permissions: [
     {
       type: String,

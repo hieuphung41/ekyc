@@ -11,7 +11,9 @@ import {
     logoutClient,
     getApiKeys,
     revokeApiKey,
-    regenerateApiKey
+    regenerateApiKey,
+    getApiReport,
+    getEndpointReport
 } from '../controllers/apiClientController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
@@ -35,6 +37,10 @@ router.get('/api-keys', protect, getApiKeys);
 router.post('/api-keys/generate', protect, generateApiKey);
 router.post('/api-keys/revoke', protect, revokeApiKey);
 router.post('/api-keys/regenerate', protect, regenerateApiKey);
+
+// API Report Routes (Protected)
+router.get('/api-report', protect, getApiReport);
+router.get('/api-report/:endpoint', protect, getEndpointReport);
 
 // Admin only routes
 router.get('/', protect, authorize('admin'), getAllClients);
