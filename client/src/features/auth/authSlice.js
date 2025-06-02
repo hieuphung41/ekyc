@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axiosInstance from '../../utils/axios';
 import { checkAuthStatus } from '../../utils/auth';
 import { jwtDecode } from 'jwt-decode';
+import { toast } from 'react-toastify';
 
 export const login = createAsyncThunk(
   '/users/login',
@@ -15,7 +16,7 @@ export const login = createAsyncThunk(
       const token = response.data.data.token;
       const decoded = jwtDecode(token);
       
-      // Return both the token and decoded user info
+      toast.success('Login successful!');
       return {
         token,
         user: {
@@ -24,6 +25,7 @@ export const login = createAsyncThunk(
         }
       };
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Login failed');
       return rejectWithValue(error.response?.data || { message: 'Login failed' });
     }
   }
@@ -36,8 +38,10 @@ export const register = createAsyncThunk(
       const response = await axiosInstance.post('/users/register', userData, {
         withCredentials: true
       });
+      toast.success('Registration successful! Please login.');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Registration failed');
       return rejectWithValue(error.response?.data || { message: 'Registration failed' });
     }
   }
@@ -75,8 +79,10 @@ export const logout = createAsyncThunk(
       await axiosInstance.post('/users/logout', {}, {
         withCredentials: true
       });
+      toast.success('Logged out successfully');
       return null;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Logout failed');
       return rejectWithValue(error.response?.data || { message: 'Logout failed' });
     }
   }
@@ -85,7 +91,7 @@ export const logout = createAsyncThunk(
 const initialState = {
   user: null,
   isAuthenticated: false,
-  loading: false,
+  loading: true,
   error: null,
   role: null
 };
@@ -132,6 +138,7 @@ const authSlice = createSlice({
       })
       .addCase(checkAuth.pending, (state) => {
         state.loading = true;
+        state.error = null;
       })
       .addCase(checkAuth.fulfilled, (state, action) => {
         state.loading = false;

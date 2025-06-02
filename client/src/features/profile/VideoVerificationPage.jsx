@@ -12,7 +12,8 @@ import Layout from '../../layouts/Layout';
 
 const VideoVerificationPage = () => {
   const navigate = useNavigate();
-  const { video, completedSteps } = useSelector((state) => state.kyc);
+  const { biometricData, completedSteps } = useSelector((state) => state.kyc);
+  const videoData = biometricData?.videoData;
 
   const getStatusIcon = (status) => {
     switch (status) {
@@ -68,23 +69,23 @@ const VideoVerificationPage = () => {
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4">Verification Status</h2>
               <div className="flex items-center space-x-2">
-                {getStatusIcon(video?.verificationStatus)}
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(video?.verificationStatus)}`}>
-                  {video?.verificationStatus?.toUpperCase() || 'PENDING'}
+                {getStatusIcon(videoData?.verificationStatus)}
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(videoData?.verificationStatus)}`}>
+                  {videoData?.verificationStatus?.toUpperCase() || 'PENDING'}
                 </span>
               </div>
             </div>
 
             {/* Video Details */}
-            {video && (
+            {videoData && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Liveness Score */}
                   <div className="p-4 border rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Liveness Score</h3>
                     <p className="text-lg font-semibold">
-                      {video.livenessScore 
-                        ? `${Math.round(video.livenessScore * 100)}%`
+                      {videoData.livenessScore 
+                        ? `${Math.round(videoData.livenessScore * 100)}%`
                         : 'N/A'}
                     </p>
                   </div>
@@ -93,8 +94,18 @@ const VideoVerificationPage = () => {
                   <div className="p-4 border rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Confidence Score</h3>
                     <p className="text-lg font-semibold">
-                      {video.confidenceScore 
-                        ? `${Math.round(video.confidenceScore * 100)}%`
+                      {videoData.confidence 
+                        ? `${Math.round(videoData.confidence * 100)}%`
+                        : 'N/A'}
+                    </p>
+                  </div>
+
+                  {/* Face Match Score */}
+                  <div className="p-4 border rounded-lg">
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">Face Match Score</h3>
+                    <p className="text-lg font-semibold">
+                      {videoData.faceMatchScore 
+                        ? `${Math.round(videoData.faceMatchScore * 100)}%`
                         : 'N/A'}
                     </p>
                   </div>
@@ -103,8 +114,8 @@ const VideoVerificationPage = () => {
                   <div className="p-4 border rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Upload Date</h3>
                     <p className="text-lg font-semibold">
-                      {video.uploadDate 
-                        ? new Date(video.uploadDate).toLocaleDateString()
+                      {videoData.uploadedAt 
+                        ? new Date(videoData.uploadedAt).toLocaleDateString()
                         : 'N/A'}
                     </p>
                   </div>
@@ -112,12 +123,14 @@ const VideoVerificationPage = () => {
                   {/* File Information */}
                   <div className="p-4 border rounded-lg">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">File Information</h3>
-                    <p className="text-lg font-semibold">
-                      {video.fileName || 'N/A'}
+                    <p className="text-sm">
+                      {videoData.fileType 
+                        ? `Type: ${videoData.fileType}`
+                        : 'N/A'}
                     </p>
-                    <p className="text-sm text-gray-500">
-                      {video.fileSize 
-                        ? `${(video.fileSize / (1024 * 1024)).toFixed(2)} MB`
+                    <p className="text-sm">
+                      {videoData.fileSize 
+                        ? `Size: ${Math.round(videoData.fileSize / (1024 * 1024))} MB`
                         : 'N/A'}
                     </p>
                   </div>

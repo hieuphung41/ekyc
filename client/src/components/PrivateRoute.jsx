@@ -12,10 +12,13 @@ const PrivateRoute = ({ children }) => {
 
   useEffect(() => {
     // Check authentication status when component mounts
-    dispatch(checkAuth());
-  }, [dispatch]);
+    if (!isAuthenticated) {
+      dispatch(checkAuth());
+    }
+  }, [dispatch, isAuthenticated]);
 
-  if (loading) {
+  // Show loading state only if we're checking auth and not authenticated
+  if (loading && !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -23,8 +26,8 @@ const PrivateRoute = ({ children }) => {
     );
   }
 
-  if (!isAuthenticated) {
-    // Redirect to login with the return url
+  // Only redirect if we're sure the user is not authenticated
+  if (!loading && !isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

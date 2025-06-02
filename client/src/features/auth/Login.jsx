@@ -14,16 +14,16 @@ const Login = () => {
   const location = useLocation();
   const { loading, error, isAuthenticated, user } = useSelector((state) => state.auth);
 
-  // Get the return URL from location state or default to appropriate dashboard
+  // Get the return URL from location state or default to appropriate admin
   const from = location.state?.from?.pathname || '/';
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
       if (user.role === 'admin') {
-        navigate('/admin/dashboard', { replace: true });
+        navigate('/admin', { replace: true });
       } else {
-        navigate('/dashboard', { replace: true });
+        navigate('/', { replace: true });
       }
     }
   }, [isAuthenticated, user, navigate]);
@@ -37,9 +37,9 @@ const Login = () => {
     try {
       const result = await dispatch(login(formData)).unwrap();
       if (result.user.role === 'admin') {
-        navigate('/admin/dashboard', { replace: true });
+        navigate('/admin', { replace: true });
       } else {
-        navigate('/dashboard', { replace: true });
+        navigate('/', { replace: true });
       }
     } catch (err) {
       console.error('Login failed:', err);

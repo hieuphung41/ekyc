@@ -35,6 +35,8 @@ import AdminApiClients from "./features/admin/AdminApiClients";
 import AdminApiClientEdit from "./features/admin/AdminApiClientEdit";
 import AdminUserCreate from './features/admin/AdminUserCreate';
 import AdminApiClientCreate from './features/admin/AdminApiClientCreate';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 // Component to conditionally render navbar
 const AppContent = () => {
@@ -42,15 +44,18 @@ const AppContent = () => {
   const location = useLocation();
   const isApiClientRoute = location.pathname.startsWith("/api-client");
   const isAdminRoute = location.pathname.startsWith("/admin");
+  const isAuthRoute = location.pathname === "/login" || location.pathname === "/register";
 
   useEffect(() => {
-    // Check auth based on current route
-    if (isApiClientRoute) {
-      dispatch(checkClientAuth());
-    } else {
-      dispatch(checkAuth());
+    // Only check auth if not on auth routes
+    if (!isAuthRoute) {
+      if (isApiClientRoute) {
+        dispatch(checkClientAuth());
+      } else {
+        dispatch(checkAuth());
+      }
     }
-  }, [dispatch, location.pathname]);
+  }, [dispatch, location.pathname, isApiClientRoute, isAuthRoute]);
 
   return (
     <>
@@ -61,7 +66,7 @@ const AppContent = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
-            path="/dashboard"
+            path="/"
             element={
               <PrivateRoute>
                 <Dashboard />
@@ -111,7 +116,7 @@ const AppContent = () => {
 
           {/* Admin Routes */}
           <Route
-            path="/admin/dashboard"
+            path="/admin"
             element={
               <PrivateRoute>
                 <AdminDashboard />
@@ -171,7 +176,7 @@ const AppContent = () => {
           <Route path="/api-client/login" element={<ApiClientLogin />} />
           <Route path="/api-client/register" element={<ApiClientRegister />} />
           <Route
-            path="/api-client/dashboard"
+            path="/api-client"
             element={
               <ClientRoute>
                 <ApiClientDashboard />
@@ -204,6 +209,18 @@ const AppContent = () => {
           />
         </Routes>
       </main>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
     </>
   );
 };

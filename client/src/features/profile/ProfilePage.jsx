@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, Link } from "react-router-dom";
 import {
   UserCircleIcon,
@@ -10,19 +9,25 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { checkAuthStatus } from "../../utils/auth";
-import { getKYCStatus } from "../kyc/kycSlice";
+import useKYC from "../../hooks/useKYC";
 import Layout from "../../layouts/Layout";
 
 const ProfilePage = () => {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const { status, completedSteps, documents, personalInfo } = useSelector(
-    (state) => state.kyc
-  );
+  const {
+    status,
+    completedSteps,
+    documents,
+    personalInfo,
+    biometricData,
+    loading: kycLoading,
+    error: kycError,
+    refetch: refetchKYC
+  } = useKYC();
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -33,7 +38,6 @@ const ProfilePage = () => {
           return;
         }
         setUser(userData);
-        await dispatch(getKYCStatus());
       } catch (err) {
         setError("Failed to load profile data");
       } finally {
@@ -42,9 +46,9 @@ const ProfilePage = () => {
     };
 
     fetchUserData();
-  }, [dispatch, navigate]);
+  }, [navigate]);
 
-  if (loading) {
+  if (loading || kycLoading) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[60vh]">
@@ -54,44 +58,44 @@ const ProfilePage = () => {
     );
   }
 
-  if (error) {
+  if (error || kycError) {
     return (
       <Layout>
         <div className="bg-red-50 border-l-4 border-red-500 p-4">
           <div className="flex">
             <ExclamationTriangleIcon className="h-5 w-5 text-red-400 mr-2" />
-            <p className="text-red-700">{error}</p>
+            <p className="text-red-700">{error || kycError}</p>
           </div>
         </div>
       </Layout>
     );
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "approved":
-        return "text-green-600 bg-green-50";
-      case "rejected":
-        return "text-red-600 bg-red-50";
-      case "pending":
-        return "text-yellow-600 bg-yellow-50";
-      default:
-        return "text-gray-600 bg-gray-50";
-    }
+  const getStatusColor = (isCompleted) => {
+    return isCompleted ? "text-green-600 bg-green-50" : "text-yellow-600 bg-yellow-50";
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "approved":
-        return <CheckCircleIcon className="h-5 w-5 text-green-500" />;
-      case "rejected":
-        return <XCircleIcon className="h-5 w-5 text-red-500" />;
-      case "pending":
-        return <ClockIcon className="h-5 w-5 text-yellow-500" />;
-      default:
-        return <ClockIcon className="h-5 w-5 text-gray-500" />;
-    }
+  const getStatusIcon = (isCompleted) => {
+    return isCompleted ? (
+      <CheckCircleIcon className="h-5 w-5 text-green-500" />
+    ) : (
+      <ClockIcon className="h-5 w-5 text-yellow-500" />
+    );
   };
+
+  const getOverallStatus = () => {
+    const allStepsCompleted = 
+      completedSteps?.faceVerification?.completed &&
+      completedSteps?.documentVerification?.completed &&
+      completedSteps?.videoVerification?.completed;
+
+    return {
+      isCompleted: allStepsCompleted,
+      text: allStepsCompleted ? "COMPLETED" : "IN PROGRESS"
+    };
+  };
+
+  const overallStatus = getOverallStatus();
 
   return (
     <Layout>
@@ -115,9 +119,9 @@ const ProfilePage = () => {
           <div className="p-6 border-b">
             <h2 className="text-xl font-semibold mb-4">KYC Status</h2>
             <div className="flex items-center space-x-2 mb-4">
-              {getStatusIcon(status)}
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(status)}`}>
-                {status?.toUpperCase()}
+              {getStatusIcon(overallStatus.isCompleted)}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(overallStatus.isCompleted)}`}>
+                {overallStatus.text}
               </span>
             </div>
 
@@ -189,10 +193,10 @@ const ProfilePage = () => {
                       </div>
                       <span
                         className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                          doc.verificationStatus
+                          completedSteps?.documentVerification?.completed
                         )}`}
                       >
-                        {doc.verificationStatus?.toUpperCase()}
+                        {completedSteps?.documentVerification?.completed ? "VERIFIED" : "PENDING"}
                       </span>
                     </div>
                     {doc.documentNumber && (

@@ -1,44 +1,122 @@
-import React from 'react';
-import { useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   IdentificationIcon,
   CheckCircleIcon,
   XCircleIcon,
   ClockIcon,
   ArrowLeftIcon,
-} from '@heroicons/react/24/outline';
-import Layout from '../../layouts/Layout';
+} from "@heroicons/react/24/outline";
+import useKYC from "../../hooks/useKYC";
+import Layout from "../../layouts/Layout";
 
 const DocumentVerificationPage = () => {
   const navigate = useNavigate();
-  const { documents, completedSteps } = useSelector((state) => state.kyc);
+  const {
+    documents,
+    completedSteps,
+    loading,
+    error
+  } = useKYC();
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "verified":
-        return <CheckCircleIcon className="h-5 w-5 text-green-500" />;
-      case "rejected":
-        return <XCircleIcon className="h-5 w-5 text-red-500" />;
-      case "pending":
-        return <ClockIcon className="h-5 w-5 text-yellow-500" />;
-      default:
-        return <ClockIcon className="h-5 w-5 text-gray-500" />;
+  const [selectedType, setSelectedType] = useState("");
+  const [frontImage, setFrontImage] = useState(null);
+  const [backImage, setBackImage] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+
+  const document = documents?.[0]; // Get the first document
+
+  const documentTypes = [
+    { id: "nationalId", label: "National ID" },
+    { id: "passport", label: "Passport" },
+    { id: "drivingLicense", label: "Driving License" }
+  ];
+
+  const handleDocumentTypeSelect = (type) => {
+    setSelectedType(type);
+  };
+
+  const handleImageChange = (e, type) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (type === 'front') {
+        setFrontImage(file);
+      } else {
+        setBackImage(file);
+      }
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "verified":
-        return "text-green-600 bg-green-50";
-      case "rejected":
-        return "text-red-600 bg-red-50";
-      case "pending":
-        return "text-yellow-600 bg-yellow-50";
-      default:
-        return "text-gray-600 bg-gray-50";
+  const handleUpload = async () => {
+    if (!selectedType || !frontImage || !backImage) {
+      setUploadError("Please select document type and upload both front and back images");
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    const formData = new FormData();
+    formData.append('documentType', selectedType);
+    formData.append('frontImage', frontImage);
+    formData.append('backImage', backImage);
+
+    try {
+      const response = await fetch('/api/kyc/document', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Upload failed');
+      }
+
+      // Refresh KYC data
+      window.location.reload();
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setUploading(false);
     }
   };
+
+  const getStatusIcon = (isCompleted) => {
+    return isCompleted ? (
+      <CheckCircleIcon className="h-5 w-5 text-green-500" />
+    ) : (
+      <ClockIcon className="h-5 w-5 text-yellow-500" />
+    );
+  };
+
+  const getStatusColor = (isCompleted) => {
+    return isCompleted ? "text-green-600 bg-green-50" : "text-yellow-600 bg-yellow-50";
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center min-h-[60vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="bg-red-50 border-l-4 border-red-500 p-4">
+          <div className="flex">
+            <XCircleIcon className="h-5 w-5 text-red-400 mr-2" />
+            <p className="text-red-700">{error}</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -47,7 +125,7 @@ const DocumentVerificationPage = () => {
           {/* Header */}
           <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-8 text-white">
             <button
-              onClick={() => navigate('/profile')}
+              onClick={() => navigate("/profile")}
               className="flex items-center text-white hover:text-blue-100 mb-4"
             >
               <ArrowLeftIcon className="h-5 w-5 mr-2" />
@@ -68,68 +146,158 @@ const DocumentVerificationPage = () => {
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4">Verification Status</h2>
               <div className="flex items-center space-x-2">
-                {getStatusIcon(documents?.[0]?.verificationStatus)}
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(documents?.[0]?.verificationStatus)}`}>
-                  {documents?.[0]?.verificationStatus?.toUpperCase() || 'PENDING'}
+                {getStatusIcon(completedSteps?.documentVerification?.completed)}
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                    completedSteps?.documentVerification?.completed
+                  )}`}
+                >
+                  {completedSteps?.documentVerification?.completed
+                    ? "Verified"
+                    : "Pending"}
                 </span>
               </div>
             </div>
 
+            {/* Document Upload Section */}
+            {!document && (
+              <div className="space-y-6">
+                <div className="p-4 border rounded-lg">
+                  <h3 className="text-lg font-medium mb-4">Select Document Type</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {documentTypes.map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => handleDocumentTypeSelect(type.id)}
+                        className={`p-4 border rounded-lg text-center ${
+                          selectedType === type.id
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:border-blue-300"
+                        }`}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedType && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 border rounded-lg">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">
+                          Front Image
+                        </h3>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageChange(e, 'front')}
+                          className="w-full"
+                        />
+                      </div>
+                      <div className="p-4 border rounded-lg">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">
+                          Back Image
+                        </h3>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageChange(e, 'back')}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+
+                    {uploadError && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-red-600">{uploadError}</p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleUpload}
+                      disabled={uploading || !frontImage || !backImage}
+                      className={`w-full py-2 px-4 rounded-lg ${
+                        uploading || !frontImage || !backImage
+                          ? "bg-gray-300 cursor-not-allowed"
+                          : "bg-blue-500 hover:bg-blue-600 text-white"
+                      }`}
+                    >
+                      {uploading ? "Uploading..." : "Upload Document"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Document Details */}
-            {documents && documents.length > 0 && (
+            {document && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Document Type */}
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 mb-2">Document Type</h3>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Document Type
+                    </h3>
                     <p className="text-lg font-semibold capitalize">
-                      {documents[0].type?.replace(/([A-Z])/g, ' $1').trim() || 'N/A'}
+                      {document.type?.replace(/([A-Z])/g, " $1").trim() ||
+                        "N/A"}
                     </p>
                   </div>
 
                   {/* Document Number */}
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 mb-2">Document Number</h3>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Document Number
+                    </h3>
                     <p className="text-lg font-semibold">
-                      {documents[0].documentNumber || 'N/A'}
+                      {document.documentNumber || "N/A"}
                     </p>
                   </div>
 
                   {/* Issuing Country */}
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 mb-2">Issuing Country</h3>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Issuing Country
+                    </h3>
                     <p className="text-lg font-semibold">
-                      {documents[0].issuingCountry || 'N/A'}
+                      {document.issuingCountry || "N/A"}
                     </p>
                   </div>
 
                   {/* Expiry Date */}
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 mb-2">Expiry Date</h3>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Expiry Date
+                    </h3>
                     <p className="text-lg font-semibold">
-                      {documents[0].expiryDate 
-                        ? new Date(documents[0].expiryDate).toLocaleDateString()
-                        : 'N/A'}
+                      {document.expiryDate
+                        ? new Date(document.expiryDate).toLocaleDateString()
+                        : "N/A"}
                     </p>
                   </div>
                 </div>
 
                 {/* OCR Data */}
-                {documents[0].ocrData && (
+                {document.ocrData && (
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-sm font-medium text-gray-500 mb-2">OCR Data</h3>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      OCR Data
+                    </h3>
                     <div className="space-y-2">
                       <p className="text-sm">
                         <span className="font-medium">Confidence Score: </span>
-                        {documents[0].ocrData.confidence 
-                          ? `${Math.round(documents[0].ocrData.confidence * 100)}%`
-                          : 'N/A'}
+                        {document.ocrData.confidence
+                          ? `${Math.round(document.ocrData.confidence * 100)}%`
+                          : "N/A"}
                       </p>
                       <p className="text-sm">
                         <span className="font-medium">Processed At: </span>
-                        {documents[0].ocrData.processedAt 
-                          ? new Date(documents[0].ocrData.processedAt).toLocaleDateString()
-                          : 'N/A'}
+                        {document.ocrData.processedAt
+                          ? new Date(
+                              document.ocrData.processedAt
+                            ).toLocaleDateString()
+                          : "N/A"}
                       </p>
                     </div>
                   </div>
@@ -137,7 +305,9 @@ const DocumentVerificationPage = () => {
 
                 {/* Completion Status */}
                 <div className="p-4 border rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Step Completion</h3>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Step Completion
+                  </h3>
                   <div className="flex items-center space-x-2">
                     {completedSteps?.documentVerification?.completed ? (
                       <CheckCircleIcon className="h-5 w-5 text-green-500" />
@@ -146,8 +316,10 @@ const DocumentVerificationPage = () => {
                     )}
                     <span className="text-sm">
                       {completedSteps?.documentVerification?.completed
-                        ? `Completed on ${new Date(completedSteps.documentVerification.completedAt).toLocaleDateString()}`
-                        : 'Not completed'}
+                        ? `Completed on ${new Date(
+                            completedSteps.documentVerification.completedAt
+                          ).toLocaleDateString()}`
+                        : "Not completed"}
                     </span>
                   </div>
                 </div>
@@ -160,4 +332,4 @@ const DocumentVerificationPage = () => {
   );
 };
 
-export default DocumentVerificationPage; 
+export default DocumentVerificationPage;

@@ -12,8 +12,7 @@ import ffmpegStatic from "ffmpeg-static";
 
 const UPLOAD_DIR =
   process.env.ID_UPLOAD_DIR || path.join(process.cwd(), "public", "uploads");
-const FPT_API_KEY =
-  process.env.FPT_AI_API_KEY || "kXmIitbsxqFi8t60QmdQaUue9y1Qk9JW";
+const FPT_API_KEY = process.env.FPT_AI_API_KEY;
 const ISSUING_COUNTRY_DEFAULT = process.env.ID_ISSUING_COUNTRY || "Vietnam";
 
 async function safeUnlink(filePath) {
@@ -151,83 +150,28 @@ export const uploadFacePhoto = async (req, res) => {
 // @desc    Upload ID document for verification
 // @route   POST /api/kyc/document
 // @access  Private
-// export const uploadIDDocument = async (req, res) => {
-//   try {
-//     const { frontImage, backImage } = req.files;
-//     const userId = req.user.id;
-
-//     // Validate file types
-//     const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
-//     if (!allowedTypes.includes(frontImage[0].mimetype) ||
-//         !allowedTypes.includes(backImage[0].mimetype)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid file format. Only PNG and JPG are allowed."
-//       });
-//     }
-
-//     // Process with FPT.AI or similar service
-//     const formData = new FormData();
-//     formData.append("image", fs.createReadStream(frontImage[0].path));
-//     formData.append("type", "identity_card");
-
-//     const apiResponse = await axios.post(
-//       process.env.ID_VERIFICATION_API_URL,
-//       formData,
-//       {
-//         headers: {
-//           "api-key": process.env.ID_VERIFICATION_API_KEY,
-//           ...formData.getHeaders(),
-//         },
-//       }
-//     );
-
-//     // Check for duplicate ID
-//     const extractedID = apiResponse.data.data[0].id;
-//     const existingKYC = await KYC.findOne({
-//       "documents.documentNumber": extractedID
-//     });
-
-//     if (existingKYC) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "This ID number has already been registered"
-//       });
-//     }
-
-//     // Update KYC document
-//     const kyc = await KYC.findOne({ userId });
-//     kyc.documents.push({
-//       type: "nationalId",
-//       documentNumber: extractedID,
-//       frontImageUrl: frontImage[0].path,
-//       backImageUrl: backImage[0].path,
-//       ocrData: {
-//         extractedFields: apiResponse.data.data[0],
-//         confidence: apiResponse.data.confidence,
-//         processedAt: new Date()
-//       }
-//     });
-
-//     await kyc.save();
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "ID document processed successfully",
-//       data: kyc.documents[kyc.documents.length - 1]
-//     });
-//   } catch (error) {
-//     console.error("Error processing ID document:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to process ID document"
-//     });
-//   }
-// };
 export const uploadIDDocument = async (req, res) => {
   try {
     const { frontImage, backImage } = req.files;
+    const { documentType } = req.body;
     const userId = req.user.id;
+
+    // Validate document type
+    const validTypes = ["nationalId", "passport", "drivingLicense"];
+    if (!validTypes.includes(documentType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid document type",
+      });
+    }
+
+    // Validate files
+    if (!frontImage?.[0] || !backImage?.[0]) {
+      return res.status(400).json({
+        success: false,
+        message: "Both front and back images are required",
+      });
+    }
 
     const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
     if (
@@ -246,10 +190,10 @@ export const uploadIDDocument = async (req, res) => {
       await fsp.mkdir(UPLOAD_DIR, { recursive: true });
     }
 
-    const frontFileName = `${userId}-id-front-${Date.now()}.${
+    const frontFileName = `${userId}-${documentType}-front-${Date.now()}.${
       frontImage[0].mimetype.split("/")[1]
     }`;
-    const backFileName = `${userId}-id-back-${Date.now()}.${
+    const backFileName = `${userId}-${documentType}-back-${Date.now()}.${
       backImage[0].mimetype.split("/")[1]
     }`;
     const frontFilePath = path.join(UPLOAD_DIR, frontFileName);
@@ -261,29 +205,67 @@ export const uploadIDDocument = async (req, res) => {
     await fsp.writeFile(frontFilePath, frontBuffer);
     await fsp.writeFile(backFilePath, backBuffer);
 
+    // Process with FPT AI based on document type
     const formData = new FormData();
     formData.append("image", fs.createReadStream(frontFilePath));
 
-    const fptResponse = await axios.post(
-      "https://api.fpt.ai/vision/idr/vnm",
-      formData,
-      {
-        headers: {
-          "api-key": FPT_API_KEY,
-          ...formData.getHeaders(),
-        },
-      }
-    );
+    let fptResponse;
+    if (documentType === "nationalId") {
+      fptResponse = await axios.post(
+        "https://api.fpt.ai/vision/idr/vnm",
+        formData,
+        {
+          headers: {
+            "api-key": FPT_API_KEY,
+            ...formData.getHeaders(),
+          },
+        }
+      );
+    } else if (documentType === "passport") {
+      fptResponse = await axios.post(
+        "https://api.fpt.ai/vision/passport/vnm",
+        formData,
+        {
+          headers: {
+            "api-key": FPT_API_KEY,
+            ...formData.getHeaders(),
+          },
+        }
+      );
+    } else if (documentType === "drivingLicense") {
+      fptResponse = await axios.post(
+        "https://api.fpt.ai/vision/dlr/vnm",
+        formData,
+        {
+          headers: {
+            "api-key": FPT_API_KEY,
+            ...formData.getHeaders(),
+          },
+        }
+      );
+    }
 
     const fptData = fptResponse.data;
 
     if (fptResponse.status === 200 && fptData.data && fptData.data.length > 0) {
-      const extractedID = fptData.data[0].id;
-      const extractedName = fptData.data[0].name;
-      const extractedDOB = fptData.data[0].dob;
+      const extractedData = fptData.data[0];
+      let documentNumber;
+
+      // Extract document number based on document type
+      switch (documentType) {
+        case "nationalId":
+          documentNumber = extractedData.id;
+          break;
+        case "passport":
+          documentNumber = extractedData.passport_number;
+          break;
+        case "drivingLicense":
+          documentNumber = extractedData.license_number;
+          break;
+      }
 
       const existingKYC = await KYC.findOne({
-        "documents.documentNumber": extractedID,
+        "documents.documentNumber": documentNumber,
       });
 
       if (existingKYC) {
@@ -291,7 +273,7 @@ export const uploadIDDocument = async (req, res) => {
         await safeUnlink(backFilePath);
         return res.status(400).json({
           success: false,
-          message: "This ID number has already been registered",
+          message: "This document number has already been registered",
         });
       }
 
@@ -305,20 +287,22 @@ export const uploadIDDocument = async (req, res) => {
         });
       }
 
+      // Add new document
       kyc.documents.push({
-        type: "nationalId",
-        documentNumber: extractedID,
+        type: documentType,
+        documentNumber: documentNumber,
         issuingCountry: ISSUING_COUNTRY_DEFAULT,
         frontImageUrl: `/uploads/${frontFileName}`,
         backImageUrl: `/uploads/${backFileName}`,
         verificationStatus: "pending",
         ocrData: {
-          extractedFields: fptData.data[0],
+          extractedFields: extractedData,
           confidence: fptData.confidence || 1,
           processedAt: new Date(),
         },
       });
 
+      // Mark document verification step as completed
       kyc.completedSteps.documentVerification = {
         completed: true,
         completedAt: new Date(),
@@ -329,7 +313,7 @@ export const uploadIDDocument = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: "ID document processed successfully",
+        message: "Document processed successfully",
         data: kyc.documents[kyc.documents.length - 1],
       });
     } else {
@@ -337,14 +321,14 @@ export const uploadIDDocument = async (req, res) => {
       await safeUnlink(backFilePath);
       return res.status(400).json({
         success: false,
-        message: "ID document verification failed",
+        message: "Document verification failed",
       });
     }
   } catch (error) {
-    console.error("Error processing ID document:", error);
+    console.error("Error processing document:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to process ID document",
+      message: "Failed to process document",
       error: error.message,
     });
   }
@@ -550,7 +534,7 @@ export const uploadVideo = async (req, res) => {
         // Update user's verification status
         await User.findByIdAndUpdate(userId, {
           isVerified: true,
-          verificationStatus: "approved"
+          verificationStatus: "approved",
         });
       }
 
@@ -671,7 +655,7 @@ export const getKYCStatus = async (req, res) => {
     }
 
     // Check if all steps are completed and update status if needed
-    const allStepsCompleted = 
+    const allStepsCompleted =
       kyc.completedSteps.faceVerification?.completed &&
       kyc.completedSteps.documentVerification?.completed &&
       kyc.completedSteps.videoVerification?.completed;
@@ -682,13 +666,13 @@ export const getKYCStatus = async (req, res) => {
         action: "auto_approval",
         status: "approved",
         notes: "All verification steps completed successfully",
-        timestamp: new Date()
+        timestamp: new Date(),
       });
 
       // Update user's verification status
       await User.findByIdAndUpdate(req.user.id, {
         isVerified: true,
-        verificationStatus: "approved"
+        verificationStatus: "approved",
       });
 
       await kyc.save();
@@ -707,10 +691,11 @@ export const getKYCStatus = async (req, res) => {
       data: {
         status: kyc.status,
         completedSteps: kyc.completedSteps,
-        documents: kyc.documents,
-        personalInfo: kyc.personalInfo,
+        biometricData: kyc.biometricData,
         livenessCheck: kyc.livenessCheck,
         expiryDate: kyc.expiryDate,
+        documents: kyc.documents,
+        verificationHistory: kyc.verificationHistory,
         createdAt: kyc.createdAt,
         updatedAt: kyc.updatedAt,
       },
@@ -750,7 +735,7 @@ export const verifyKYC = async (req, res) => {
     // Update user's verification status based on KYC status
     await User.findByIdAndUpdate(kyc.userId, {
       isVerified: status === "approved",
-      verificationStatus: status
+      verificationStatus: status,
     });
 
     await kyc.save();

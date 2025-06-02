@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axiosInstance from '../../utils/axios';
+import { toast } from 'react-toastify';
 
 // Async thunks for KYC operations
 export const getKYCStatus = createAsyncThunk(
@@ -9,6 +10,7 @@ export const getKYCStatus = createAsyncThunk(
       const response = await axiosInstance.get('/kyc/status');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch KYC status');
       return rejectWithValue(error.response?.data || { message: 'Failed to fetch KYC status' });
     }
   }
@@ -23,8 +25,10 @@ export const uploadFacePhoto = createAsyncThunk(
           'Content-Type': 'multipart/form-data',
         },
       });
+      toast.success('Face photo uploaded successfully');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to upload face photo');
       return rejectWithValue(error.response?.data || { message: 'Failed to upload face photo' });
     }
   }
@@ -39,8 +43,10 @@ export const uploadIDCard = createAsyncThunk(
           'Content-Type': 'multipart/form-data',
         },
       });
+      toast.success('ID document uploaded successfully');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to upload ID card');
       return rejectWithValue(error.response?.data || { message: 'Failed to upload ID card' });
     }
   }
@@ -55,8 +61,10 @@ export const uploadVideo = createAsyncThunk(
           'Content-Type': 'multipart/form-data',
         },
       });
+      toast.success('Video uploaded successfully');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to upload video');
       return rejectWithValue(error.response?.data || { message: 'Failed to upload video' });
     }
   }
@@ -67,8 +75,10 @@ export const resetKYCStep = createAsyncThunk(
   async (stepKey, { rejectWithValue }) => {
     try {
       const response = await axiosInstance.post('/kyc/reset-step', { step: stepKey });
+      toast.success('KYC step reset successfully');
       return response.data.data;
     } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reset KYC step');
       return rejectWithValue(error.response?.data || { message: 'Failed to reset KYC step' });
     }
   }
@@ -76,7 +86,18 @@ export const resetKYCStep = createAsyncThunk(
 
 const initialState = {
   status: null,
-  completedSteps: {},
+  completedSteps: {
+    faceVerification: { completed: false },
+    documentVerification: { completed: false },
+    videoVerification: { completed: false }
+  },
+  documents: [],
+  personalInfo: null,
+  biometricData: {
+    faceData: null,
+    videoData: null,
+    voiceData: null
+  },
   loading: false,
   error: null,
   success: null
@@ -107,6 +128,13 @@ const kycSlice = createSlice({
         state.loading = false;
         state.status = action.payload.status;
         state.completedSteps = action.payload.completedSteps;
+        state.documents = action.payload.documents || [];
+        state.personalInfo = action.payload.personalInfo;
+        state.biometricData = action.payload.biometricData || {
+          faceData: null,
+          videoData: null,
+          voiceData: null
+        };
         state.error = null;
       })
       .addCase(getKYCStatus.rejected, (state, action) => {
@@ -121,6 +149,7 @@ const kycSlice = createSlice({
       .addCase(uploadFacePhoto.fulfilled, (state, action) => {
         state.loading = false;
         state.completedSteps = action.payload.completedSteps;
+        state.biometricData.faceData = action.payload.faceData;
         state.success = 'Face photo uploaded successfully';
         state.error = null;
       })
@@ -136,6 +165,7 @@ const kycSlice = createSlice({
       .addCase(uploadIDCard.fulfilled, (state, action) => {
         state.loading = false;
         state.completedSteps = action.payload.completedSteps;
+        state.documents = action.payload.documents || [];
         state.success = 'ID card uploaded successfully';
         state.error = null;
       })
@@ -151,6 +181,7 @@ const kycSlice = createSlice({
       .addCase(uploadVideo.fulfilled, (state, action) => {
         state.loading = false;
         state.completedSteps = action.payload.completedSteps;
+        state.biometricData.videoData = action.payload.videoData;
         state.success = 'Video uploaded successfully';
         state.error = null;
       })
