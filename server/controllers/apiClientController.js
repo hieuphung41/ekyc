@@ -1,5 +1,6 @@
 import APIClient from "../models/APIClient.js";
 import { generateToken } from "../utils/jwt.js";
+import crypto from "crypto";
 
 // @desc    Register new API client with representative
 // @route   POST /api/clients/register
@@ -311,12 +312,48 @@ export const updateClient = async (req, res) => {
   }
 };
 
-// @desc    Generate new API key
-// @route   POST /api/clients/:id/generate-key
+// @desc    Get all API keys for the authenticated client
+// @route   GET /api/clients/api-keys
+// @access  Private
+export const getApiKeys = async (req, res) => {
+  try {
+    const client = await APIClient.findById(req.apiClient._id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found",
+      });
+    }
+
+    // Return the API keys with their status and metadata
+    const apiKeys = client.apiKeys.map(key => ({
+      _id: key._id,
+      key: key.key,
+      status: key.status,
+      createdAt: key.createdAt,
+      lastUsed: key.lastUsed,
+      expiresAt: key.expiresAt
+    }));
+
+    res.json({
+      success: true,
+      data: apiKeys,
+    });
+  } catch (error) {
+    console.error("Get API keys error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching API keys",
+    });
+  }
+};
+
+// @desc    Generate new API key for the authenticated client
+// @route   POST /api/clients/api-keys/generate
 // @access  Private
 export const generateApiKey = async (req, res) => {
   try {
-    const client = await APIClient.findById(req.params.id);
+    const client = await APIClient.findById(req.apiClient._id);
     if (!client) {
       return res.status(404).json({
         success: false,
@@ -330,7 +367,11 @@ export const generateApiKey = async (req, res) => {
     res.json({
       success: true,
       data: {
-        apiKey: newApiKey,
+        id: newApiKey._id,
+        key: newApiKey.key,
+        status: newApiKey.status,
+        createdAt: newApiKey.createdAt,
+        expiresAt: newApiKey.expiresAt
       },
     });
   } catch (error) {
@@ -338,6 +379,112 @@ export const generateApiKey = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error generating new API key",
+    });
+  }
+};
+
+// @desc    Revoke an API key
+// @route   POST /api/clients/api-keys/revoke
+// @access  Private
+export const revokeApiKey = async (req, res) => {
+  try {
+    const { keyId } = req.body;
+    
+    if (!keyId) {
+      return res.status(400).json({
+        success: false,
+        message: "API key ID is required",
+      });
+    }
+
+    const client = await APIClient.findById(req.apiClient._id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found",
+      });
+    }
+
+    const apiKey = client.apiKeys.id(keyId);
+    if (!apiKey) {
+      return res.status(404).json({
+        success: false,
+        message: "API key not found",
+      });
+    }
+
+    apiKey.status = 'revoked';
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        _id: apiKey._id,
+        status: apiKey.status
+      },
+    });
+  } catch (error) {
+    console.error("Revoke API key error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error revoking API key",
+    });
+  }
+};
+
+// @desc    Regenerate an API key
+// @route   POST /api/clients/api-keys/regenerate
+// @access  Private
+export const regenerateApiKey = async (req, res) => {
+  try {
+    const { keyId } = req.body;
+    
+    if (!keyId) {
+      return res.status(400).json({
+        success: false,
+        message: "API key ID is required",
+      });
+    }
+
+    const client = await APIClient.findById(req.apiClient._id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found",
+      });
+    }
+
+    const apiKey = client.apiKeys.id(keyId);
+    if (!apiKey) {
+      return res.status(404).json({
+        success: false,
+        message: "API key not found",
+      });
+    }
+
+    // Generate new key and update the existing one
+    const newKey = crypto.randomBytes(32).toString("hex");
+    apiKey.key = newKey;
+    apiKey.status = 'active';
+    apiKey.createdAt = new Date();
+    apiKey.lastUsed = null;
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        _id: apiKey._id,
+        key: apiKey.key,
+        status: apiKey.status,
+        createdAt: apiKey.createdAt,
+        expiresAt: apiKey.expiresAt
+      },
+    });
+  } catch (error) {
+    console.error("Regenerate API key error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error regenerating API key",
     });
   }
 };

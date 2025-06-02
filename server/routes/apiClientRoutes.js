@@ -8,7 +8,10 @@ import {
     authenticateClient,
     loginRepresentative,
     checkClientAuthStatus,
-    logoutClient
+    logoutClient,
+    getApiKeys,
+    revokeApiKey,
+    regenerateApiKey
 } from '../controllers/apiClientController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
@@ -26,7 +29,12 @@ router.get('/check-auth', protect, checkClientAuthStatus);
 router.post('/logout', protect, logoutClient);
 router.get('/profile', protect, getClient);
 router.put('/profile', protect, updateClient);
-router.post('/generate-key', protect, generateApiKey);
+
+// API Key Management Routes (Protected)
+router.get('/api-keys', protect, getApiKeys);
+router.post('/api-keys/generate', protect, generateApiKey);
+router.post('/api-keys/revoke', protect, revokeApiKey);
+router.post('/api-keys/regenerate', protect, regenerateApiKey);
 
 // Admin only routes
 router.get('/', protect, authorize('admin'), getAllClients);

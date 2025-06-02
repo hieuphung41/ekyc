@@ -2,6 +2,31 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
+const apiKeySchema = new mongoose.Schema({
+  key: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  status: {
+    type: String,
+    enum: ['active', 'revoked'],
+    default: 'active'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  lastUsed: {
+    type: Date,
+    default: null
+  },
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from creation
+  }
+});
+
 const apiClientSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -57,6 +82,7 @@ const apiClientSchema = new mongoose.Schema({
       trim: true,
     }
   },
+  apiKeys: [apiKeySchema],
   permissions: [
     {
       type: String,
@@ -142,6 +168,8 @@ const apiClientSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+}, {
+  timestamps: true
 });
 
 // Update timestamp before saving
@@ -185,8 +213,15 @@ apiClientSchema.methods.isIPWhitelisted = function (ip) {
 
 // Method to generate new API key
 apiClientSchema.methods.generateNewApiKey = function () {
-  this.apiKey = crypto.randomBytes(32).toString("hex");
-  return this.apiKey;
+  const key = crypto.randomBytes(32).toString("hex");
+  const apiKey = {
+    key,
+    status: 'active',
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year from creation
+  };
+  this.apiKeys.push(apiKey);
+  return apiKey;
 };
 
 export default mongoose.model("APIClient", apiClientSchema);

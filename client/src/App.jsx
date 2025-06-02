@@ -176,7 +176,7 @@ const AppContent = () => {
           <Route path="/api-client/login" element={<ApiClientLogin />} />
           <Route path="/api-client/register" element={<ApiClientRegister />} />
           <Route
-            path="/api-client"
+            path="/api-client/dashboard"
             element={
               <ClientRoute>
                 <ApiClientDashboard />

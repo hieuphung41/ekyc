@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axiosInstance from '../../utils/axios';
 import { jwtDecode } from 'jwt-decode';
+import { toast } from 'react-toastify';
 
 // Async Thunk for API Client Registration
 export const registerClient = createAsyncThunk(
@@ -80,12 +81,71 @@ export const logoutApiClient = createAsyncThunk(
   }
 );
 
+// API Key Management Thunks
+export const getApiKeys = createAsyncThunk(
+  'apiClient/getApiKeys',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients/api-keys');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch API keys');
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch API keys' });
+    }
+  }
+);
+
+export const generateApiKey = createAsyncThunk(
+  'apiClient/generateApiKey',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post('/clients/api-keys/generate');
+      toast.success('New API key generated successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to generate API key');
+      return rejectWithValue(error.response?.data || { message: 'Failed to generate API key' });
+    }
+  }
+);
+
+export const revokeApiKey = createAsyncThunk(
+  'apiClient/revokeApiKey',
+  async (keyId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post('/clients/api-keys/revoke', { keyId });
+      toast.success('API key revoked successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to revoke API key');
+      return rejectWithValue(error.response?.data || { message: 'Failed to revoke API key' });
+    }
+  }
+);
+
+export const regenerateApiKey = createAsyncThunk(
+  'apiClient/regenerateApiKey',
+  async (keyId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post('/clients/api-keys/regenerate', { keyId });
+      toast.success('API key regenerated successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to regenerate API key');
+      return rejectWithValue(error.response?.data || { message: 'Failed to regenerate API key' });
+    }
+  }
+);
+
 const initialState = {
   client: null, // Stores API client data including representative info, permissions, etc.
   isAuthenticated: false, // Indicates if an API client representative is logged in
-  loading: false,
+  loading: true,
   error: null,
-  token: null // Storing token client-side if needed, or rely purely on httpOnly cookie
+  token: null, // Storing token client-side if needed, or rely purely on httpOnly cookie
+  apiKeys: [],
+  apiKeysLoading: false,
+  apiKeysError: null
 };
 
 const apiClientSlice = createSlice({
@@ -94,6 +154,9 @@ const apiClientSlice = createSlice({
   reducers: {
     clearApiClientError: (state) => {
       state.error = null;
+    },
+    clearApiKeysError: (state) => {
+      state.apiKeysError = null;
     },
     // You might add a reducer here to load client state from a stored token if not using httpOnly cookies
     // loadClientFromToken: (state, action) => { ... }
@@ -173,9 +236,73 @@ const apiClientSlice = createSlice({
         state.client = null;
         state.token = null;
         state.error = action.payload?.message || 'API client logout failed';
+      })
+
+      // Get API Keys
+      .addCase(getApiKeys.pending, (state) => {
+        state.apiKeysLoading = true;
+        state.apiKeysError = null;
+      })
+      .addCase(getApiKeys.fulfilled, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeys = action.payload;
+        state.apiKeysError = null;
+      })
+      .addCase(getApiKeys.rejected, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeysError = action.payload?.message || 'Failed to fetch API keys';
+      })
+
+      // Generate API Key
+      .addCase(generateApiKey.pending, (state) => {
+        state.apiKeysLoading = true;
+        state.apiKeysError = null;
+      })
+      .addCase(generateApiKey.fulfilled, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeys.push(action.payload);
+        state.apiKeysError = null;
+      })
+      .addCase(generateApiKey.rejected, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeysError = action.payload?.message || 'Failed to generate API key';
+      })
+
+      // Revoke API Key
+      .addCase(revokeApiKey.pending, (state) => {
+        state.apiKeysLoading = true;
+        state.apiKeysError = null;
+      })
+      .addCase(revokeApiKey.fulfilled, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeys = state.apiKeys.map(key => 
+          key._id === action.payload._id ? { ...key, status: action.payload.status } : key
+        );
+        state.apiKeysError = null;
+      })
+      .addCase(revokeApiKey.rejected, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeysError = action.payload?.message || 'Failed to revoke API key';
+      })
+
+      // Regenerate API Key
+      .addCase(regenerateApiKey.pending, (state) => {
+        state.apiKeysLoading = true;
+        state.apiKeysError = null;
+      })
+      .addCase(regenerateApiKey.fulfilled, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeys = state.apiKeys.map(key => 
+          key._id === action.payload._id ? action.payload : key
+        );
+        state.apiKeysError = null;
+      })
+      .addCase(regenerateApiKey.rejected, (state, action) => {
+        state.apiKeysLoading = false;
+        state.apiKeysError = action.payload?.message || 'Failed to regenerate API key';
       });
   },
 });
 
-export const { clearApiClientError } = apiClientSlice.actions;
+export const { clearApiClientError, clearApiKeysError } = apiClientSlice.actions;
 export default apiClientSlice.reducer; 
