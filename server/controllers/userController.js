@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import { generateToken, verifyToken } from "../utils/jwt.js";
 import { uploadMiddleware, deleteFile } from "../utils/fileUpload.js";
 import APIClient from "../models/APIClient.js";
+import moment from "moment"; // Import moment for date formatting (if needed, although aggregation handles it)
 
 // @desc    Register user
 // @route   POST /api/users/register
@@ -365,11 +366,33 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-// @desc    Get admin dashboard stats
-// @route   GET /api/users/stats
+// @desc    Get admin dashboard stats with time-based grouping
+// @route   GET /api/users/admin/stats
 // @access  Private/Admin
 export const getAdminStats = async (req, res) => {
   try {
+    // Helper for grouping by date format
+    const groupBy = (dateField, format) => [
+      {
+        $group: {
+          _id: { $dateToString: { format, date: `$${dateField}` } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } } // Sort by date ascending
+    ];
+
+    // User stats by time period
+    const userWeek = await User.aggregate(groupBy("createdAt", "%Y-%U")); // Year-Week
+    const userMonth = await User.aggregate(groupBy("createdAt", "%Y-%m")); // Year-Month
+    const userYear = await User.aggregate(groupBy("createdAt", "%Y")); // Year
+
+    // API Client stats by time period
+    const clientWeek = await APIClient.aggregate(groupBy("createdAt", "%Y-%U"));
+    const clientMonth = await APIClient.aggregate(groupBy("createdAt", "%Y-%m"));
+    const clientYear = await APIClient.aggregate(groupBy("createdAt", "%Y"));
+
+    // Existing overall counts
     const totalUsers = await User.countDocuments();
     const activeUsers = await User.countDocuments({ status: 'active' });
     const totalApiClients = await APIClient.countDocuments();
@@ -381,7 +404,17 @@ export const getAdminStats = async (req, res) => {
         totalUsers,
         activeUsers,
         totalApiClients,
-        activeApiClients
+        activeApiClients,
+        userStats: {
+          week: userWeek,
+          month: userMonth,
+          year: userYear
+        },
+        clientStats: {
+          week: clientWeek,
+          month: clientMonth,
+          year: clientYear
+        }
       }
     });
   } catch (error) {

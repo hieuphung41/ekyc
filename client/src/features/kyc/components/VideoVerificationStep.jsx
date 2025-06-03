@@ -162,7 +162,7 @@ const VideoVerificationStep = ({ onComplete, onError }) => {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Step 3: Record Face Video</h2>
+      <h2 className="text-xl font-semibold mb-2">Step 3: Video Verification</h2>
       <p className="text-gray-600 mb-4">
         Please record a short video of your face. Keep your face centered in the frame
         and ensure good lighting. The video should be at least 5 seconds long.

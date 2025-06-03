@@ -7,6 +7,7 @@ import {
   XCircleIcon,
   ClockIcon,
   ExclamationTriangleIcon,
+  MicrophoneIcon,
 } from "@heroicons/react/24/outline";
 import { checkAuthStatus } from "../../utils/auth";
 import useKYC from "../../hooks/useKYC";
@@ -87,7 +88,8 @@ const ProfilePage = () => {
     const allStepsCompleted = 
       completedSteps?.faceVerification?.completed &&
       completedSteps?.documentVerification?.completed &&
-      completedSteps?.videoVerification?.completed;
+      completedSteps?.videoVerification?.completed &&
+      completedSteps?.voiceVerification?.completed;
 
     return {
       isCompleted: allStepsCompleted,
@@ -170,6 +172,20 @@ const ProfilePage = () => {
                   <span className="text-sm text-gray-500">
                     {completedSteps?.videoVerification?.completed
                       ? `Completed on ${new Date(completedSteps.videoVerification.completedAt).toLocaleDateString()}`
+                      : 'Not completed'}
+                  </span>
+                </Link>
+
+                <Link
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(completedSteps?.voiceVerification?.completed)}
+                    <span>Voice Verification</span>
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    {completedSteps?.voiceVerification?.completed
+                      ? `Completed on ${new Date(completedSteps.voiceVerification.completedAt).toLocaleDateString()}`
                       : 'Not completed'}
                   </span>
                 </Link>

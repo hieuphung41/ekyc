@@ -45,6 +45,17 @@ const kycSchema = new mongoose.Schema({
         default: 0,
       },
     },
+    voiceVerification: {
+      completed: {
+        type: Boolean,
+        default: false,
+      },
+      completedAt: Date,
+      attempts: {
+        type: Number,
+        default: 0,
+      },
+    },
   },
   personalInfo: {
     dateOfBirth: Date,
@@ -177,7 +188,8 @@ kycSchema.pre("save", function (next) {
   const allStepsCompleted = 
     this.completedSteps.faceVerification?.completed &&
     this.completedSteps.documentVerification?.completed &&
-    this.completedSteps.videoVerification?.completed;
+    this.completedSteps.videoVerification?.completed &&
+    this.completedSteps.voiceVerification?.completed;
 
   // If all steps are completed and status is pending, update to approved
   if (allStepsCompleted && this.status === "pending") {
@@ -190,6 +202,15 @@ kycSchema.pre("save", function (next) {
       notes: "All verification steps completed successfully",
       timestamp: new Date()
     });
+  }
+
+  // Update voice verification step if voice data is verified
+  if (this.biometricData?.voiceData?.verificationStatus === "verified") {
+    this.completedSteps.voiceVerification = {
+      completed: true,
+      completedAt: new Date(),
+      attempts: (this.completedSteps.voiceVerification?.attempts || 0) + 1
+    };
   }
 
   next();
@@ -216,7 +237,10 @@ kycSchema.methods.getNextIncompleteStep = function () {
   if (!this.completedSteps.videoVerification.completed) {
     return 3;
   }
-  return 4; // All steps completed
+  if (!this.completedSteps.voiceVerification.completed) {
+    return 4;
+  }
+  return 5; // All steps completed
 };
 
 export default mongoose.model("KYC", kycSchema);

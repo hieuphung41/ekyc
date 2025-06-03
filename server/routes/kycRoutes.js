@@ -9,7 +9,8 @@ import {
   getAllKYC,
   uploadVoiceSample,
   verifyVoiceSample,
-  uploadVideo
+  uploadVideo,
+  processSpeechRecognition
 } from "../controllers/kycController.js";
 import { protect, authorize } from "../middlewares/auth.js";
 import { uploadMiddleware } from "../utils/fileUpload.js";
@@ -70,5 +71,13 @@ router.post("/reset-step", protect, resetKycStep);
 
 // Admin only routes
 router.get("/all", protect, authorize("admin"), getAllKYC);
+
+// Speech recognition route
+router.post(
+  "/speech",
+  protect,
+  uploadMiddleware.single("audioFile"),
+  processSpeechRecognition
+);
 
 export default router;

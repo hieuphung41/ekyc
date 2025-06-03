@@ -5,6 +5,7 @@ import Layout from "../../layouts/Layout";
 import FaceDetectionStep from "./components/FaceDetectionStep";
 import IDCardUploadStep from "./components/IDCardUploadStep";
 import VideoVerificationStep from "./components/VideoVerificationStep";
+import VoiceVerificationStep from "./components/VoiceVerificationStep";
 import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
@@ -14,6 +15,7 @@ import {
   UserCircleIcon,
   IdentificationIcon,
   VideoCameraIcon,
+  MicrophoneIcon,
 } from "@heroicons/react/24/outline";
 import { getKYCStatus, resetKYCStep, clearError, clearSuccess } from "./kycSlice";
 
@@ -28,7 +30,8 @@ const KYCVerification = () => {
     if (!completedSteps.faceVerification?.completed) return 1;
     if (!completedSteps.documentVerification?.completed) return 2;
     if (!completedSteps.videoVerification?.completed) return 3;
-    return 4;
+    if (!completedSteps.voiceVerification?.completed) return 4;
+    return 5;
   };
 
   const currentStep = getCurrentStep();
@@ -55,6 +58,13 @@ const KYCVerification = () => {
       description: "Record a short video with interactive instructions",
       icon: VideoCameraIcon,
       key: "videoVerification",
+    },
+    {
+      number: 4,
+      title: "Voice Verification",
+      description: "Record your voice reading a specific text",
+      icon: MicrophoneIcon,
+      key: "voiceVerification",
     },
   ];
 
@@ -104,7 +114,7 @@ const KYCVerification = () => {
   }
 
   // If all steps are completed, show completion screen
-  if (currentStep === 4) {
+  if (currentStep === 5) {
     return (
       <Layout>
         <div className="bg-white rounded-lg shadow-md p-6 max-w-3xl mx-auto">
@@ -256,6 +266,13 @@ const KYCVerification = () => {
           {currentStep === 3 && (
             <VideoVerificationStep
               onComplete={handleNextStep}
+              onError={handleError}
+            />
+          )}
+
+          {currentStep === 4 && (
+            <VoiceVerificationStep
+              onNext={handleNextStep}
               onError={handleError}
             />
           )}

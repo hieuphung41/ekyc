@@ -84,12 +84,30 @@ export const resetKYCStep = createAsyncThunk(
   }
 );
 
+export const processVoiceVerification = createAsyncThunk(
+  'kyc/processVoiceVerification',
+  async (formData, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post('/kyc/speech', formData, {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Voice verification failed');
+    }
+  }
+);
+
 const initialState = {
   status: null,
   completedSteps: {
     faceVerification: { completed: false },
     documentVerification: { completed: false },
-    videoVerification: { completed: false }
+    videoVerification: { completed: false },
+    voiceVerification: { completed: false }
   },
   documents: [],
   personalInfo: null,
@@ -203,6 +221,25 @@ const kycSlice = createSlice({
       .addCase(resetKYCStep.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload?.message || 'Failed to reset step';
+      })
+      // Process Voice Verification
+      .addCase(processVoiceVerification.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+        state.success = null;
+      })
+      .addCase(processVoiceVerification.fulfilled, (state, action) => {
+        state.loading = false;
+        state.success = 'Voice verification completed successfully';
+        state.completedSteps.voiceVerification = {
+          completed: true,
+          completedAt: new Date().toISOString()
+        };
+        state.biometricData.voiceData = action.payload.data;
+      })
+      .addCase(processVoiceVerification.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload || 'Voice verification failed';
       });
   }
 });

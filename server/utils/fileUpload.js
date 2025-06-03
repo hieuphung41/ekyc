@@ -77,6 +77,23 @@ const fileFilter = (req, file, cb) => {
     req.fileValidationError =
       "Invalid video format. Please use a supported video format like WebM or MP4.";
     return cb(null, false);
+  } else if (file.fieldname === "audioFile" || file.fieldname === "voiceSample") {
+    // Audio files for voice verification
+    if (
+      file.mimetype.startsWith("audio/") ||
+      file.mimetype === "application/octet-stream" || // For blob uploads
+      file.mimetype === "audio/webm" || // Add WebM audio support
+      file.originalname.endsWith(".wav") ||
+      file.originalname.endsWith(".mp3") ||
+      file.originalname.endsWith(".m4a") ||
+      file.originalname.endsWith(".webm")
+    ) {
+      return cb(null, true);
+    }
+    // Audio-specific error
+    req.fileValidationError =
+      "Invalid audio format. Please use a supported audio format like WAV, MP3, M4A, or WebM.";
+    return cb(null, false);
   } else {
     // Image or PDF for other uploads (like ID card)
     if (
