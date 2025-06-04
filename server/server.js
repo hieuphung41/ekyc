@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import userRoutes from './routes/userRoutes.js';
 import kycRoutes from './routes/kycRoutes.js';
 import apiClientRoutes from './routes/apiClientRoutes.js';
+import transactionRoutes from './routes/transactionRoutes.js';
 import cookieParser from 'cookie-parser';
 
 dotenv.config();
@@ -33,6 +34,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ekyc-plat
 app.use('/api/users', userRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/clients', apiClientRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

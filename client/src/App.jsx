@@ -6,7 +6,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { Provider } from "react-redux";
-import { store } from "./store";
+import { store } from "./store/index";
 import { useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { checkAuth } from "./features/auth/authSlice";
@@ -37,6 +37,7 @@ import AdminUserCreate from './features/admin/AdminUserCreate';
 import AdminApiClientCreate from './features/admin/AdminApiClientCreate';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import TransactionConfirmation from "./features/transaction/TransactionConfirmation";
 
 // Component to conditionally render navbar
 const AppContent = () => {
@@ -205,6 +206,14 @@ const AppContent = () => {
               <ClientRoute>
                 <ApiClientApiReport />
               </ClientRoute>
+            }
+          />
+          <Route
+            path="/transaction/:id"
+            element={
+              <PrivateRoute>
+                <TransactionConfirmation />
+              </PrivateRoute>
             }
           />
         </Routes>

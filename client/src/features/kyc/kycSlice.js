@@ -133,7 +133,7 @@ const kycSlice = createSlice({
     },
     resetKYCState: (state) => {
       return initialState;
-    }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -244,5 +244,5 @@ const kycSlice = createSlice({
   }
 });
 
-export const { clearError, clearSuccess, resetKYCState } = kycSlice.actions;
+export const { clearError, clearSuccess, resetKYCState, resetKycState } = kycSlice.actions;
 export default kycSlice.reducer; 
