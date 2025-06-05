@@ -1,6 +1,7 @@
 import APIClient from "../models/APIClient.js";
 import { generateToken } from "../utils/jwt.js";
 import crypto from "crypto";
+import User from "../models/User.js";
 
 // @desc    Register new API client with representative
 // @route   POST /api/clients/register
@@ -214,7 +215,7 @@ export const authenticateClient = async (req, res) => {
     }
 
     const token = generateToken({
-      id: client._id,
+      _id: client._id,
       role: "api-client",
       permissions: client.permissions,
     });
@@ -491,12 +492,12 @@ export const regenerateApiKey = async (req, res) => {
 
 // @desc    Get all API clients
 // @route   GET /api/clients
-// @access  Private/Admin
+// @access  Public
 export const getAllClients = async (req, res) => {
   try {
-    const clients = await APIClient.find()
-      .select("-clientSecret -representative.password")
-      .sort({ createdAt: -1 });
+    const clients = await APIClient.find({ status: "active" })
+      .select("name organization.name organization.website")
+      .sort({ name: 1 });
 
     res.json({
       success: true,
@@ -729,6 +730,101 @@ export const getEndpointReport = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching endpoint report",
+    });
+  }
+};
+
+// @desc    Get users registered with the API client
+// @route   GET /api/clients/users
+// @access  Private
+export const getClientUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', status = 'all' } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Build query
+    const query = { registeredBy: req.apiClient._id };
+    if (status !== 'all') {
+      query.status = status;
+    }
+    if (search) {
+      query.$or = [
+        { email: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get total count for pagination
+    const total = await User.countDocuments(query);
+
+    // Get users with pagination
+    const users = await User.find(query)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get client users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching users'
+    });
+  }
+};
+
+// @desc    Update user status
+// @route   PUT /api/clients/users/:userId/status
+// @access  Private
+export const updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    // Validate status
+    if (!['active', 'pending', 'suspended'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status'
+      });
+    }
+
+    // Find user and verify it belongs to this API client
+    const user = await User.findOne({
+      _id: userId,
+      registeredBy: req.apiClient._id
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update status
+    user.status = status;
+    await user.save();
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Update user status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user status'
     });
   }
 };

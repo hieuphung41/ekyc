@@ -4,9 +4,19 @@ import APIClient from "../models/APIClient.js";
 
 export const protect = async (req, res, next) => {
   try {
-    const token = req.cookies.auth_token || req.cookies.auth_token_apiclient || req.headers.authorization?.split(' ')[1];
+    let token = null;
+    
+    // Check cookies first
+    if (req.cookies?.auth_token) {
+      token = req.cookies.auth_token;
+    } else if (req.cookies?.auth_token_apiclient) {
+      token = req.cookies.auth_token_apiclient;
+    } else if (req.headers?.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
 
     if (!token) {
+      console.log('No token found in request');
       return res.status(401).json({
         success: false,
         message: "Not authorized to access this route",
@@ -14,10 +24,18 @@ export const protect = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
+    if (!decoded) {
+      console.log('Token verification failed');
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
 
     if (decoded.role === 'api-client') {
       const apiClient = await APIClient.findById(decoded.id);
       if (!apiClient) {
+        console.log('API client not found:', decoded.id);
         return res.status(401).json({
           success: false,
           message: "API client not found",
@@ -27,6 +45,7 @@ export const protect = async (req, res, next) => {
     } else {
       const user = await User.findById(decoded.id).select("-password");
       if (!user) {
+        console.log('User not found:', decoded.id);
         return res.status(401).json({
           success: false,
           message: "User not found",
@@ -37,6 +56,7 @@ export const protect = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error);
     return res.status(401).json({
       success: false,
       message: "Not authorized to access this route",

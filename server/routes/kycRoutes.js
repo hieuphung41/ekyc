@@ -10,7 +10,8 @@ import {
   uploadVoiceSample,
   verifyVoiceSample,
   uploadVideo,
-  processSpeechRecognition
+  processSpeechRecognition,
+  getUserKycStatus
 } from "../controllers/kycController.js";
 import { protect, authorize } from "../middlewares/auth.js";
 import { uploadMiddleware } from "../utils/fileUpload.js";
@@ -64,6 +65,8 @@ router.get("/liveness-challenge", protect, getLivenessChallenge);
 
 // KYC status and management routes
 router.get("/status", protect, getKYCStatus);
+
+router.get("/users/status", protect, getUserKycStatus)
 
 router.put("/verify/:id", protect, authorize("admin"), verifyKYC);
 

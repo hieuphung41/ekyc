@@ -28,6 +28,7 @@ import ApiClientDashboard from "./features/apiClient/ApiClientDashboard";
 import ApiClientApis from "./features/apiClient/ApiClientApis";
 import ApiClientApiKeys from "./features/apiClient/ApiClientApiKeys";
 import ApiClientApiReport from "./features/apiClient/ApiClientApiReport";
+import ApiClientUsers from "./features/apiClient/ApiClientUsers";
 import AdminDashboard from "./features/admin/AdminDashboard";
 import AdminUsers from "./features/admin/AdminUsers";
 import AdminUserEdit from "./features/admin/AdminUserEdit";
@@ -205,6 +206,14 @@ const AppContent = () => {
             element={
               <ClientRoute>
                 <ApiClientApiReport />
+              </ClientRoute>
+            }
+          />
+          <Route
+            path="/api-client/users"
+            element={
+              <ClientRoute>
+                <ApiClientUsers />
               </ClientRoute>
             }
           />

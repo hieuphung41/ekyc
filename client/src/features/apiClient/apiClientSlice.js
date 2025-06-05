@@ -164,6 +164,82 @@ export const getEndpointReport = createAsyncThunk(
   }
 );
 
+// Add this new thunk after the existing thunks
+export const getPublicClients = createAsyncThunk(
+  'apiClient/getPublicClients',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients');
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch API clients' });
+    }
+  }
+);
+
+export const getClientUsers = createAsyncThunk(
+  'apiClient/getClientUsers',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients/users');
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch client users' });
+    }
+  }
+);
+
+export const updateUserStatus = createAsyncThunk(
+  'apiClient/updateUserStatus',
+  async ({ userId, status }, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.put(`/clients/users/${userId}/status`, { status });
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Failed to update user status' });
+    }
+  }
+);
+
+// eKYC Thunks
+export const requestEkyc = createAsyncThunk(
+  'apiClient/requestEkyc',
+  async ({ userId, verificationMethod }, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post(`/clients/users/${userId}/ekyc/request`, {
+        verificationMethod
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to request eKYC verification');
+    }
+  }
+);
+
+export const getEkycStatus = createAsyncThunk(
+  'apiClient/getEkycStatus',
+  async (userId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get(`/clients/users/${userId}/ekyc/status`);
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch eKYC status' });
+    }
+  }
+);
+
+export const getEkycResult = createAsyncThunk(
+  'apiClient/getEkycResult',
+  async (userId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get(`/clients/users/${userId}/ekyc/result`);
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch eKYC result' });
+    }
+  }
+);
+
 const initialState = {
   client: null, // Stores API client data including representative info, permissions, etc.
   isAuthenticated: false, // Indicates if an API client representative is logged in
@@ -179,7 +255,26 @@ const initialState = {
   apiReportError: null,
   endpointReport: null,
   endpointReportLoading: false,
-  endpointReportError: null
+  endpointReportError: null,
+  // Add new state for public clients
+  publicClients: [],
+  publicClientsLoading: false,
+  publicClientsError: null,
+  clientUsers: {
+    users: [],
+    total: 0,
+    page: 1,
+    limit: 10
+  },
+  clientUsersLoading: false,
+  clientUsersError: null,
+  ekyc: {
+    currentRequest: null,
+    status: null,
+    result: null,
+    loading: false,
+    error: null
+  }
 };
 
 const apiClientSlice = createSlice({
@@ -195,6 +290,12 @@ const apiClientSlice = createSlice({
     clearApiReportError: (state) => {
       state.apiReportError = null;
       state.endpointReportError = null;
+    },
+    clearClientUsersError: (state) => {
+      state.clientUsersError = null;
+    },
+    clearEkycError: (state) => {
+      state.ekyc.error = null;
     },
     // You might add a reducer here to load client state from a stored token if not using httpOnly cookies
     // loadClientFromToken: (state, action) => { ... }
@@ -368,9 +469,97 @@ const apiClientSlice = createSlice({
       .addCase(getEndpointReport.rejected, (state, action) => {
         state.endpointReportLoading = false;
         state.endpointReportError = action.payload?.message || 'Failed to fetch endpoint report';
+      })
+
+      // Get Public Clients
+      .addCase(getPublicClients.pending, (state) => {
+        state.publicClientsLoading = true;
+        state.publicClientsError = null;
+      })
+      .addCase(getPublicClients.fulfilled, (state, action) => {
+        state.publicClientsLoading = false;
+        state.publicClients = action.payload;
+        state.publicClientsError = null;
+      })
+      .addCase(getPublicClients.rejected, (state, action) => {
+        state.publicClientsLoading = false;
+        state.publicClientsError = action.payload?.message || 'Failed to fetch API clients';
+      })
+
+      // Get Client Users
+      .addCase(getClientUsers.pending, (state) => {
+        state.clientUsersLoading = true;
+        state.clientUsersError = null;
+      })
+      .addCase(getClientUsers.fulfilled, (state, action) => {
+        state.clientUsersLoading = false;
+        state.clientUsers = action.payload;
+        state.clientUsersError = null;
+      })
+      .addCase(getClientUsers.rejected, (state, action) => {
+        state.clientUsersLoading = false;
+        state.clientUsersError = action.payload?.message || 'Failed to fetch users';
+      })
+
+      // Update User Status
+      .addCase(updateUserStatus.fulfilled, (state, action) => {
+        const updatedUser = action.payload;
+        state.clientUsers.users = state.clientUsers.users.map(user =>
+          user._id === updatedUser._id ? updatedUser : user
+        );
+      })
+
+      // Request eKYC
+      .addCase(requestEkyc.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(requestEkyc.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(requestEkyc.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+
+      // Get eKYC Status
+      .addCase(getEkycStatus.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(getEkycStatus.fulfilled, (state, action) => {
+        state.loading = false;
+        state.ekyc.status = action.payload;
+        state.ekyc.error = null;
+      })
+      .addCase(getEkycStatus.rejected, (state, action) => {
+        state.loading = false;
+        state.ekyc.error = action.payload?.message || 'Failed to fetch eKYC status';
+      })
+
+      // Get eKYC Result
+      .addCase(getEkycResult.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(getEkycResult.fulfilled, (state, action) => {
+        state.loading = false;
+        state.ekyc.result = action.payload;
+        state.ekyc.error = null;
+      })
+      .addCase(getEkycResult.rejected, (state, action) => {
+        state.loading = false;
+        state.ekyc.error = action.payload?.message || 'Failed to fetch eKYC result';
       });
   },
 });
 
-export const { clearApiClientError, clearApiKeysError, clearApiReportError } = apiClientSlice.actions;
+export const { 
+  clearApiClientError, 
+  clearApiKeysError, 
+  clearApiReportError,
+  clearClientUsersError,
+  clearEkycError 
+} = apiClientSlice.actions;
+
 export default apiClientSlice.reducer; 

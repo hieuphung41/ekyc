@@ -40,6 +40,30 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  registeredBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "APIClient",
+    required: true,
+  },
+  status: {
+    type: String,
+    enum: ["active", "inactive", "suspended", "pending"],
+    default: "pending",
+  },
+  clientMetadata: {
+    clientReferenceId: String,
+    relationshipType: String,
+    registrationDate: {
+      type: Date,
+      default: Date.now,
+    },
+    lastActivityDate: Date,
+    customFields: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: new Map(),
+    },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

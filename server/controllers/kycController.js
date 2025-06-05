@@ -728,6 +728,89 @@ export const getKYCStatus = async (req, res) => {
   }
 };
 
+export const getUserKycStatus = async (req, res) => {
+  try {
+    const userId = req.query.id;
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+    let kyc = await KYC.findOne({ userId: userId })
+      .select(
+        "-biometricData.faceData.imageUrl -biometricData.videoData.videoUrl -documents.frontImageUrl -documents.backImageUrl"
+      )
+      .sort({ createdAt: -1 });
+
+    if (!kyc) {
+      // Create new KYC application if none exists
+      kyc = await KYC.create({
+        userId: userId,
+        status: "pending",
+        completedSteps: {
+          faceVerification: { completed: false },
+          documentVerification: { completed: false },
+          videoVerification: { completed: false },
+          voiceVerification: { completed: false },
+        },
+        expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
+      });
+    }
+
+    // Check if all steps are completed and update status if needed
+    const allStepsCompleted =
+      kyc.completedSteps.faceVerification?.completed &&
+      kyc.completedSteps.documentVerification?.completed &&
+      kyc.completedSteps.videoVerification?.completed &&
+      kyc.completedSteps.voiceVerification?.completed;
+
+    if (allStepsCompleted && kyc.status === "pending") {
+      kyc.status = "approved";
+      kyc.verificationHistory.push({
+        action: "auto_approval",
+        status: "approved",
+        notes: "All verification steps completed successfully",
+        timestamp: new Date(),
+      });
+
+      // Update user's verification status
+      await User.findByIdAndUpdate(userId, {
+        isVerified: true,
+        verificationStatus: "approved",
+      });
+
+      await kyc.save();
+    }
+
+    // Set KYC state in cookie
+    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "development",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.json({
+      success: true,
+      data: {
+        status: kyc.status,
+        completedSteps: kyc.completedSteps,
+        biometricData: kyc.biometricData,
+        livenessCheck: kyc.livenessCheck,
+        expiryDate: kyc.expiryDate,
+        documents: kyc.documents,
+        verificationHistory: kyc.verificationHistory,
+        createdAt: kyc.createdAt,
+        updatedAt: kyc.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("KYC status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching KYC status",
+    });
+  }
+};
+
 // @desc    Verify KYC (Admin only)
 // @route   PUT /api/kyc/verify/:id
 // @access  Private/Admin
@@ -1100,7 +1183,13 @@ export const processSpeechRecognition = async (req, res) => {
     }
 
     // Validate file type
-    const allowedTypes = ["audio/wav", "audio/mpeg", "audio/mp4", "audio/webm", "application/octet-stream"];
+    const allowedTypes = [
+      "audio/wav",
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/webm",
+      "application/octet-stream",
+    ];
     if (!allowedTypes.includes(audioFile.mimetype)) {
       await deleteFile(audioFile.path);
       return res.status(400).json({
@@ -1141,18 +1230,18 @@ export const processSpeechRecognition = async (req, res) => {
           .setFfmpegPath(ffmpegStatic)
           .audioChannels(1) // Mono audio
           .audioFrequency(16000) // 16kHz sample rate
-          .audioCodec('pcm_s16le') // 16-bit PCM
-          .format('wav') // Explicitly set format to WAV
+          .audioCodec("pcm_s16le") // 16-bit PCM
+          .format("wav") // Explicitly set format to WAV
           .outputOptions([
-            '-acodec pcm_s16le', // 16-bit PCM
-            '-ar 16000', // 16kHz sample rate
-            '-ac 1', // Mono
-            '-f wav' // Force WAV format
+            "-acodec pcm_s16le", // 16-bit PCM
+            "-ar 16000", // 16kHz sample rate
+            "-ac 1", // Mono
+            "-f wav", // Force WAV format
           ])
-          .on('end', () => {
+          .on("end", () => {
             resolve();
           })
-          .on('error', (err) => {
+          .on("error", (err) => {
             reject(err);
           })
           .save(outputPath);
@@ -1161,7 +1250,7 @@ export const processSpeechRecognition = async (req, res) => {
       // Verify the WAV file exists and has content
       const stats = await fs.promises.stat(outputPath);
       if (stats.size === 0) {
-        throw new Error('Generated WAV file is empty');
+        throw new Error("Generated WAV file is empty");
       }
     } catch (error) {
       console.error("Error converting audio:", error);
@@ -1176,7 +1265,10 @@ export const processSpeechRecognition = async (req, res) => {
     }
 
     // Configure Azure Speech Service
-    const speechConfig = sdk.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+    const speechConfig = sdk.SpeechConfig.fromSubscription(
+      AZURE_SPEECH_KEY,
+      AZURE_SPEECH_REGION
+    );
     speechConfig.speechRecognitionLanguage = "en-US";
 
     // Read the WAV file into a buffer
@@ -1236,12 +1328,17 @@ export const processSpeechRecognition = async (req, res) => {
         const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
 
         // Create secure storage path
-        const storageDir = path.join(process.cwd(), "storage", "biometric", "voice");
+        const storageDir = path.join(
+          process.cwd(),
+          "storage",
+          "biometric",
+          "voice"
+        );
         await fs.promises.mkdir(storageDir, { recursive: true });
 
         // Move file to secure location
         const securePath = path.join(storageDir, secureFilename);
-        
+
         // Copy the converted WAV file instead of renaming
         await fs.promises.copyFile(outputPath, securePath);
 
@@ -1249,7 +1346,9 @@ export const processSpeechRecognition = async (req, res) => {
 
         kyc.biometricData.voiceData.audioUrl = securePath;
         kyc.biometricData.voiceData.fileType = "audio/wav"; // Always store as WAV
-        kyc.biometricData.voiceData.fileSize = (await fs.promises.stat(securePath)).size;
+        kyc.biometricData.voiceData.fileSize = (
+          await fs.promises.stat(securePath)
+        ).size;
         kyc.biometricData.voiceData.uploadedAt = new Date();
       } catch (error) {
         console.error("Error saving voice template:", error);
@@ -1274,11 +1373,15 @@ export const processSpeechRecognition = async (req, res) => {
 
     // Add to verification history
     kyc.verificationHistory.push({
-      action: isFirstRecording ? "voice_template_creation" : "speech_recognition",
-      status: isFirstRecording ? "success" : (isMatch ? "success" : "failed"),
-      notes: isFirstRecording 
-        ? "Initial voice template created successfully" 
-        : `Speech recognition ${isMatch ? "successful" : "failed"}. Confidence: ${confidence}`,
+      action: isFirstRecording
+        ? "voice_template_creation"
+        : "speech_recognition",
+      status: isFirstRecording ? "success" : isMatch ? "success" : "failed",
+      notes: isFirstRecording
+        ? "Initial voice template created successfully"
+        : `Speech recognition ${
+            isMatch ? "successful" : "failed"
+          }. Confidence: ${confidence}`,
       timestamp: new Date(),
     });
 

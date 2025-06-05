@@ -1,6 +1,23 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axiosInstance from '../../utils/axios';
-import { toast } from 'react-toastify';
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import axiosInstance from "../../utils/axios";
+import { toast } from "react-toastify";
+
+// Async thunk to get KYC status for a specific user
+export const getUserKYCStatus = createAsyncThunk(
+  "kyc/getUserKYCStatus",
+  async (userId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get("/kyc/users/status", {
+        params: { id: userId },
+      });
+      return { userId, status: response.data.data };
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data || { message: "Failed to fetch KYC status" }
+      );
+    }
+  }
+);
 
 // Async thunks for KYC operations
 export const getKYCStatus = createAsyncThunk(

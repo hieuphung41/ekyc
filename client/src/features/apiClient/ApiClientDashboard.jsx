@@ -2,16 +2,18 @@ import React, { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import ApiClientLayout from './ApiClientLayout';
 import { getApiReport } from './apiClientSlice';
-import { Line } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 } from 'chart.js';
 
 ChartJS.register(
@@ -19,9 +21,11 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
 
 const apiList = [
@@ -83,8 +87,13 @@ const ApiClientDashboard = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: false },
-      title: { display: false },
+      legend: {
+        position: 'top',
+      },
+      title: {
+        display: true,
+        text: 'API Usage Over Time'
+      }
     },
     scales: {
       x: {
@@ -94,6 +103,7 @@ const ApiClientDashboard = () => {
         beginAtZero: true,
       },
     },
+    fill: true
   };
 
   return (
