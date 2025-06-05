@@ -15,6 +15,7 @@ const ApiClientUsers = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+
   useEffect(() => {
     dispatch(
       getClientUsers({
@@ -56,9 +57,15 @@ const ApiClientUsers = () => {
   };
 
   const getKycStatusBadge = (userId) => {
-    const userKycStatus = kycStatus[userId]; // Lấy trạng thái KYC từ Redux store
-    if (!userKycStatus) return null;
-
+    const userKycStatus = kycStatus ? kycStatus[userId] : null; // Lấy trạng thái KYC từ Redux store
+    if (!userKycStatus)
+      return (
+        <div className="flex flex-col space-y-1">
+          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+            KYC Status: Not Available
+          </span>
+        </div>
+      );
     const getStatusColor = (status) => {
       switch (status) {
         case true:
