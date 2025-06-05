@@ -26,7 +26,7 @@ const transactionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pending", "verified", "rejected", "completed", "failed", "expired"],
+    enum: ["pending", "approved", "expired"],
     default: "pending",
   },
   verificationMethod: {
@@ -190,5 +190,35 @@ transactionSchema.methods.verify = async function (verificationMethod, verificat
   await this.save();
   return this;
 };
+
+// Add pre-save middleware to update status
+transactionSchema.pre('save', function(next) {
+  // Check if transaction is expired
+  if (this.isExpired()) {
+    this.status = 'expired';
+    return next();
+  }
+
+  // If transaction is already approved or expired, don't change status
+  if (this.status === 'approved' || this.status === 'expired') {
+    return next();
+  }
+
+  // Check verification status based on verification method
+  if (this.verificationMethod === 'both') {
+    if (this.verificationData?.face?.verified && 
+        this.verificationData?.voice?.verified) {
+      this.status = 'approved';
+    }
+  } else if (this.verificationMethod === 'face' && 
+             this.verificationData?.face?.verified) {
+    this.status = 'approved';
+  } else if (this.verificationMethod === 'voice' && 
+             this.verificationData?.voice?.verified) {
+    this.status = 'approved';
+  }
+
+  next();
+});
 
 export default mongoose.model("Transaction", transactionSchema); 

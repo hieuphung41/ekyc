@@ -6,6 +6,7 @@ import {
   getTransactionStatus,
   getUserTransactions,
   getTransactionHistory,
+  deleteTransaction,
 } from "../controllers/transactionController.js";
 import { protect } from "../middlewares/auth.js";
 import { uploadMiddleware } from "../utils/fileUpload.js";
@@ -40,5 +41,8 @@ router.post(
   uploadMiddleware.single("voiceSample"),
   verifyTransactionVoice
 );
+
+// Delete transaction
+router.delete("/:id", deleteTransaction);
 
 export default router; 

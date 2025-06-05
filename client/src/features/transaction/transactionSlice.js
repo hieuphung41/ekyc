@@ -89,6 +89,19 @@ export const verifyTransactionVoice = createAsyncThunk(
   }
 );
 
+// Delete transaction
+export const deleteTransaction = createAsyncThunk(
+  "transaction/delete",
+  async (transactionId, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.delete(`/transactions/${transactionId}`);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response.data);
+    }
+  }
+);
+
 const initialState = {
   transactions: [],
   currentTransaction: null,
@@ -174,6 +187,20 @@ const transactionSlice = createSlice({
       })
       .addCase(verifyTransactionVoice.rejected, (state, action) => {
         state.verificationStatus.voice = "failed";
+        state.error = action.payload.message;
+      })
+      // Delete transaction
+      .addCase(deleteTransaction.pending, (state) => {
+        state.status = "loading";
+      })
+      .addCase(deleteTransaction.fulfilled, (state, action) => {
+        state.status = "succeeded";
+        state.transactions = state.transactions.filter(
+          (t) => t.transactionId !== action.payload.data.transactionId
+        );
+      })
+      .addCase(deleteTransaction.rejected, (state, action) => {
+        state.status = "failed";
         state.error = action.payload.message;
       });
   },

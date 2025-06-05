@@ -9,12 +9,51 @@ import axios from "axios";
 import FormData from "form-data";
 import sdk from "microsoft-cognitiveservices-speech-sdk";
 import dotenv from "dotenv";
+import KYC from "../models/KYC.js";
 
 dotenv.config();
 
 const FPT_API_KEY = process.env.FPT_AI_API_KEY;
 const AZURE_SPEECH_KEY = process.env.AZURE_KEY;
 const AZURE_SPEECH_REGION = "eastus";
+
+// Helper function to check if transaction is expired
+const isTransactionExpired = (transaction) => {
+  const expiryTime = new Date(transaction.createdAt);
+  expiryTime.setMinutes(expiryTime.getMinutes() + 15); // 15 minutes expiry
+  return new Date() > expiryTime;
+};
+
+// Helper function to update transaction status
+const updateTransactionStatus = async (transaction) => {
+  if (isTransactionExpired(transaction)) {
+    transaction.status = "expired";
+    await transaction.save();
+    return false;
+  }
+
+  // If all required verifications are completed successfully
+  if (transaction.verificationMethod === "both") {
+    if (transaction.verificationData?.face?.verified && 
+        transaction.verificationData?.voice?.verified) {
+      transaction.status = "approved";
+      await transaction.save();
+      return true;
+    }
+  } else if (transaction.verificationMethod === "face" && 
+             transaction.verificationData?.face?.verified) {
+    transaction.status = "approved";
+    await transaction.save();
+    return true;
+  } else if (transaction.verificationMethod === "voice" && 
+             transaction.verificationData?.voice?.verified) {
+    transaction.status = "approved";
+    await transaction.save();
+    return true;
+  }
+
+  return false;
+};
 
 // @desc    Create a new transaction
 // @route   POST /api/transactions
@@ -83,9 +122,20 @@ export const verifyTransactionFace = async (req, res) => {
       });
     }
 
-    // Get user's KYC photo
-    const user = await User.findById(req.user.id);
-    if (!user || !user.biometricData?.faceData?.imageUrl) {
+    // Check if transaction is expired
+    if (isTransactionExpired(transaction)) {
+      transaction.status = "expired";
+      await transaction.save();
+      await deleteFile(file.path);
+      return res.status(400).json({
+        success: false,
+        message: "Transaction has expired",
+      });
+    }
+
+    // Get user's KYC data
+    const kyc = await KYC.findOne({ userId: req.user.id });
+    if (!kyc || !kyc.biometricData?.faceData?.imageUrl) {
       await deleteFile(file.path);
       return res.status(400).json({
         success: false,
@@ -98,7 +148,7 @@ export const verifyTransactionFace = async (req, res) => {
     formData.append("file[]", fs.createReadStream(file.path));
     formData.append(
       "file[]",
-      fs.createReadStream(user.biometricData?.faceData?.imageUrl)
+      fs.createReadStream(kyc.biometricData?.faceData?.imageUrl)
     );
 
     // Call FPT AI face matching API
@@ -138,6 +188,7 @@ export const verifyTransactionFace = async (req, res) => {
         faceConfidence: verificationResult.data?.similarity || 0,
         faceImageUrl: securePath,
         confidence: verificationResult.data?.similarity || 0,
+        verified: isMatch
       });
 
       if (!isMatch) {
@@ -150,6 +201,9 @@ export const verifyTransactionFace = async (req, res) => {
         });
       }
 
+      // Update transaction status
+      const isVerified = await updateTransactionStatus(transaction);
+
       res.json({
         success: true,
         data: {
@@ -161,6 +215,7 @@ export const verifyTransactionFace = async (req, res) => {
           riskScore: transaction.riskScore,
           verificationData: transaction.verificationData,
           similarity: verificationResult.data?.similarity,
+          isVerified,
         },
       });
     } else {
@@ -188,14 +243,13 @@ export const verifyTransactionFace = async (req, res) => {
 export const verifyTransactionVoice = async (req, res) => {
   try {
     const { id } = req.params;
+    const file = req.file;
     const { text } = req.body;
-    const audioFile = req.file;
 
-    if (!audioFile || !text) {
-      if (audioFile) await deleteFile(audioFile.path);
+    if (!file) {
       return res.status(400).json({
         success: false,
-        message: "Missing audio file or text",
+        message: "No voice sample uploaded",
       });
     }
 
@@ -205,36 +259,44 @@ export const verifyTransactionVoice = async (req, res) => {
     });
 
     if (!transaction) {
-      await deleteFile(audioFile.path);
+      await deleteFile(file.path);
       return res.status(404).json({
         success: false,
         message: "Transaction not found",
       });
     }
 
-    if (transaction.isExpired()) {
-      await deleteFile(audioFile.path);
+    // Check if transaction is expired
+    if (isTransactionExpired(transaction)) {
+      transaction.status = "expired";
+      await transaction.save();
+      await deleteFile(file.path);
       return res.status(400).json({
         success: false,
         message: "Transaction has expired",
       });
     }
 
-    // Configure Azure Speech Service
+    // Get user's KYC data
+    const kyc = await KYC.findOne({ userId: req.user.id });
+    if (!kyc || !kyc.biometricData?.voiceData?.audioUrl) {
+      await deleteFile(file.path);
+      return res.status(400).json({
+        success: false,
+        message: "User KYC data not found",
+      });
+    }
+
+    // Process voice verification using Azure Speech Services
     const speechConfig = sdk.SpeechConfig.fromSubscription(
       AZURE_SPEECH_KEY,
       AZURE_SPEECH_REGION
     );
     speechConfig.speechRecognitionLanguage = "en-US";
 
-    // Read the audio file
-    const audioBuffer = await fs.promises.readFile(audioFile.path);
-    const audioConfig = sdk.AudioConfig.fromWavFileInput(audioBuffer);
-
-    // Create speech recognizer
+    const audioConfig = sdk.AudioConfig.fromWavFileInput(file.path);
     const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
 
-    // Process speech recognition
     const result = await new Promise((resolve, reject) => {
       recognizer.recognizeOnceAsync(
         (result) => {
@@ -246,47 +308,69 @@ export const verifyTransactionVoice = async (req, res) => {
       );
     });
 
-    // Get recognized text
-    const recognizedText = result.text.trim().toLowerCase();
-    const expectedTextLower = text.trim().toLowerCase();
+    if (result.reason === sdk.ResultReason.RecognizedSpeech) {
+      const recognizedText = result.text.toLowerCase();
+      const expectedText = text.toLowerCase();
 
-    // Calculate similarity score
-    const isMatch = recognizedText === expectedTextLower;
-    const confidence = result.confidence || 0;
+      // Generate secure filename
+      const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
 
-    // Generate secure filename
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
+      // Create secure storage path
+      const storageDir = path.join(
+        process.cwd(),
+        "storage",
+        "transactions",
+        "voice"
+      );
+      await fs.promises.mkdir(storageDir, { recursive: true });
 
-    // Create secure storage path
-    const storageDir = path.join(
-      process.cwd(),
-      "storage",
-      "transactions",
-      "voice"
-    );
-    await fs.promises.mkdir(storageDir, { recursive: true });
+      // Move file to secure location
+      const securePath = path.join(storageDir, secureFilename);
+      await fs.promises.rename(file.path, securePath);
 
-    // Move file to secure location
-    const securePath = path.join(storageDir, secureFilename);
-    await fs.promises.rename(audioFile.path, securePath);
+      // Update transaction with verification data
+      await transaction.verify("voice", {
+        voiceSampleUrl: securePath,
+        recognizedText: recognizedText,
+        expectedText: expectedText,
+        confidence: result.confidence,
+      });
 
-    // Update transaction with verification data
-    await transaction.verify("voice", {
-      voiceConfidence: confidence,
-      voiceAudioUrl: securePath,
-      confidence: confidence,
-    });
+      if (recognizedText !== expectedText) {
+        return res.status(400).json({
+          success: false,
+          message: "Voice verification failed - text does not match",
+          data: {
+            recognizedText,
+            expectedText,
+          },
+        });
+      }
 
-    res.json({
-      success: true,
-      data: {
-        status: transaction.status,
-        riskScore: transaction.riskScore,
-        verificationData: transaction.verificationData,
-        isMatch,
-        confidence,
-      },
-    });
+      // Update transaction status
+      const isVerified = await updateTransactionStatus(transaction);
+
+      res.json({
+        success: true,
+        data: {
+          transactionId: transaction.transactionId,
+          type: transaction.type,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          status: transaction.status,
+          riskScore: transaction.riskScore,
+          verificationData: transaction.verificationData,
+          confidence: result.confidence,
+          isVerified,
+        },
+      });
+    } else {
+      await deleteFile(file.path);
+      return res.status(400).json({
+        success: false,
+        message: "Voice verification failed",
+      });
+    }
   } catch (error) {
     console.error("Voice verification error:", error);
     if (req.file?.path) {
@@ -407,6 +491,67 @@ export const getTransactionHistory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching transaction history",
+    });
+  }
+};
+
+// @desc    Delete transaction
+// @route   DELETE /api/transactions/:id
+// @access  Private
+export const deleteTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const transaction = await Transaction.findOne({
+      transactionId: id,
+      userId: req.user.id,
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: "Transaction not found",
+      });
+    }
+
+    // Check if transaction can be deleted
+    if (transaction.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete pending transactions",
+      });
+    }
+
+    if (transaction.status === "expired" || transaction.status === "approved") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete expired or approved transactions",
+      });
+    }
+
+    // Delete associated files if they exist
+    if (transaction.verificationData?.face?.faceImageUrl) {
+      await deleteFile(transaction.verificationData.face.faceImageUrl);
+    }
+    if (transaction.verificationData?.voice?.voiceSampleUrl) {
+      await deleteFile(transaction.verificationData.voice.voiceSampleUrl);
+    }
+
+    // Delete the transaction
+    await transaction.deleteOne();
+
+    res.json({
+      success: true,
+      data: {
+        transactionId: transaction.transactionId,
+        message: "Transaction deleted successfully",
+      },
+    });
+  } catch (error) {
+    console.error("Delete transaction error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting transaction",
     });
   }
 };

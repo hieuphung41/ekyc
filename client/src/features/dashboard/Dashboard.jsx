@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../layouts/Layout";
-import { getTransactions, createTransaction } from "../transaction/transactionSlice";
+import { getTransactions, createTransaction, deleteTransaction } from "../transaction/transactionSlice";
 import { toast } from "react-toastify";
 
 const Dashboard = () => {
@@ -48,6 +48,18 @@ const Dashboard = () => {
     }
   };
 
+  const handleDeleteTransaction = async (e, transactionId) => {
+    e.stopPropagation();
+    if (window.confirm("Are you sure you want to delete this transaction?")) {
+      try {
+        await dispatch(deleteTransaction(transactionId)).unwrap();
+        toast.success("Transaction deleted successfully");
+      } catch (error) {
+        toast.error(error.message || "Failed to delete transaction");
+      }
+    }
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -71,6 +83,30 @@ const Dashboard = () => {
       default:
         return "bg-gray-100 text-gray-800";
     }
+  };
+
+  const renderTransactionActions = (transaction) => {
+    return (
+      <div className="flex space-x-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleTransactionClick(transaction.transactionId);
+          }}
+          className="text-indigo-600 hover:text-indigo-900"
+        >
+          View Details
+        </button>
+        {(transaction.status === "expired" || transaction.status === "approved") && (
+          <button
+            onClick={(e) => handleDeleteTransaction(e, transaction.transactionId)}
+            className="text-red-600 hover:text-red-900"
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -174,7 +210,11 @@ const Dashboard = () => {
                     {transactions.map((transaction) => (
                       <tr
                         key={transaction.transactionId}
-                        className="hover:bg-gray-50 cursor-pointer"
+                        className={`hover:bg-gray-50 cursor-pointer ${
+                          transaction.status === "expired" || transaction.status === "approved"
+                            ? "opacity-75"
+                            : ""
+                        }`}
                         onClick={() => handleTransactionClick(transaction.transactionId)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -199,15 +239,7 @@ const Dashboard = () => {
                           {formatDate(transaction.createdAt)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleTransactionClick(transaction.transactionId);
-                            }}
-                            className="text-indigo-600 hover:text-indigo-900"
-                          >
-                            View Details
-                          </button>
+                          {renderTransactionActions(transaction)}
                         </td>
                       </tr>
                     ))}
