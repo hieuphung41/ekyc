@@ -1,5 +1,6 @@
 /storage/biometric
-/storage/documents
+/storage/
+/storage/transactions
 /uploads
 node_modules/
 .env
