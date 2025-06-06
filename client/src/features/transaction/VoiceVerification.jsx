@@ -23,11 +23,11 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
           sampleRate: 16000,
         },
       });
-      
+
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
       });
-      
+
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -39,8 +39,12 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
 
       mediaRecorder.onstop = () => {
         // Create a single blob from all chunks
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        const file = new File([audioBlob], "voice.webm", { type: "audio/webm" });
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: "audio/webm",
+        });
+        const file = new File([audioBlob], "voice.webm", {
+          type: "audio/webm",
+        });
         setRecordedAudio(file);
       };
 
@@ -60,7 +64,9 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
       // Stop recording
       mediaRecorderRef.current.stop();
       // Stop all tracks
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
       setIsRecording(false);
     }
   };
@@ -83,13 +89,14 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
           formData,
         })
       ).unwrap();
-      
+
       toast.success("Voice verification successful");
       onSuccess(response.data.isVerified);
     } catch (error) {
       console.error("Voice verification failed:", error);
-      const errorMessage = error?.message || error?.toString() || "Voice verification failed";
-      
+      const errorMessage =
+        error?.message || error?.toString() || "Voice verification failed";
+
       if (errorMessage.toLowerCase().includes("kyc data not found")) {
         toast.error("Please complete KYC verification first");
         navigate("/kyc");
@@ -123,7 +130,11 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
           </button>
         ) : (
           <div className="space-y-4">
-            <audio src={URL.createObjectURL(recordedAudio)} controls className="w-full" />
+            <audio
+              src={URL.createObjectURL(recordedAudio)}
+              controls
+              className="w-full"
+            />
             <div className="flex space-x-4">
               <button
                 onClick={() => {

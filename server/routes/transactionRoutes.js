@@ -3,7 +3,6 @@ import {
   createTransaction,
   verifyTransactionFace,
   verifyTransactionVoice,
-  verifyTransactionBoth,
   getTransactionStatus,
   getUserTransactions,
   getTransactionHistory,
@@ -41,16 +40,6 @@ router.post(
   "/:id/verify/voice",
   uploadMiddleware.single("voiceSample"),
   verifyTransactionVoice
-);
-
-// Verify transaction with both face and voice
-router.post(
-  "/:id/verify/both",
-  uploadMiddleware.fields([
-    { name: "faceImage", maxCount: 1 },
-    { name: "voiceSample", maxCount: 1 },
-  ]),
-  verifyTransactionBoth
 );
 
 // Delete transaction
