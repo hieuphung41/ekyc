@@ -67,12 +67,8 @@ export const verifyTransactionFace = createAsyncThunk(
 // Verify transaction with voice
 export const verifyTransactionVoice = createAsyncThunk(
   "transaction/verifyVoice",
-  async ({ transactionId, voiceSample, text }, { rejectWithValue }) => {
+  async ({ transactionId, formData }, { rejectWithValue }) => {
     try {
-      const formData = new FormData();
-      formData.append("voiceSample", voiceSample);
-      formData.append("text", text);
-
       const response = await axiosInstance.post(
         `/transactions/${transactionId}/verify/voice`,
         formData,

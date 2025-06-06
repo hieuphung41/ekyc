@@ -10,6 +10,8 @@ import FormData from "form-data";
 import sdk from "microsoft-cognitiveservices-speech-sdk";
 import dotenv from "dotenv";
 import KYC from "../models/KYC.js";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegStatic from "ffmpeg-static";
 
 dotenv.config();
 
@@ -53,6 +55,15 @@ const updateTransactionStatus = async (transaction) => {
   }
 
   return false;
+};
+
+// Helper function to normalize text for comparison
+const normalizeText = (text) => {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[.,!?]/g, '') // Remove punctuation
+    .replace(/\s+/g, ' ');  // Normalize spaces
 };
 
 // @desc    Create a new transaction
@@ -171,7 +182,7 @@ export const verifyTransactionFace = async (req, res) => {
         });
       }
 
-      // Create form data for FPT AI API
+      // Create form data for FPT AI face matching API
       const formData = new FormData();
       
       // Get just the filenames from the paths
@@ -345,16 +356,69 @@ export const verifyTransactionVoice = async (req, res) => {
       });
     }
 
-    // Process voice verification using Azure Speech Services
+    // Create a unique output path for the WAV file
+    const outputDir = path.join(process.cwd(), "uploads", "temp");
+    await fs.promises.mkdir(outputDir, { recursive: true });
+    const outputPath = path.join(outputDir, `converted-${Date.now()}.wav`);
+
+    // Convert audio to WAV format with specific parameters
+    try {
+      await new Promise((resolve, reject) => {
+        ffmpeg(file.path)
+          .setFfmpegPath(ffmpegStatic)
+          .audioChannels(1) // Mono audio
+          .audioFrequency(16000) // 16kHz sample rate
+          .audioCodec("pcm_s16le") // 16-bit PCM
+          .format("wav") // Explicitly set format to WAV
+          .outputOptions([
+            "-acodec pcm_s16le", // 16-bit PCM
+            "-ar 16000", // 16kHz sample rate
+            "-ac 1", // Mono
+            "-f wav", // Force WAV format
+          ])
+          .on("end", () => {
+            resolve();
+          })
+          .on("error", (err) => {
+            reject(err);
+          })
+          .save(outputPath);
+      });
+
+      // Verify the WAV file exists and has content
+      const stats = await fs.promises.stat(outputPath);
+      if (stats.size === 0) {
+        throw new Error("Generated WAV file is empty");
+      }
+    } catch (error) {
+      console.error("Error converting audio:", error);
+      await deleteFile(file.path);
+      if (fs.existsSync(outputPath)) {
+        await deleteFile(outputPath);
+      }
+      return res.status(500).json({
+        success: false,
+        message: "Error converting audio format",
+      });
+    }
+
+    // Configure Azure Speech Service
     const speechConfig = sdk.SpeechConfig.fromSubscription(
       AZURE_SPEECH_KEY,
       AZURE_SPEECH_REGION
     );
     speechConfig.speechRecognitionLanguage = "en-US";
 
-    const audioConfig = sdk.AudioConfig.fromWavFileInput(file.path);
+    // Read the WAV file into a buffer
+    const wavBuffer = await fs.promises.readFile(outputPath);
+
+    // Create audio config from buffer
+    const audioConfig = sdk.AudioConfig.fromWavFileInput(wavBuffer);
+
+    // Create speech recognizer
     const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
 
+    // Process speech recognition
     const result = await new Promise((resolve, reject) => {
       recognizer.recognizeOnceAsync(
         (result) => {
@@ -366,69 +430,81 @@ export const verifyTransactionVoice = async (req, res) => {
       );
     });
 
-    if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-      const recognizedText = result.text.toLowerCase();
-      const expectedText = text.toLowerCase();
+    // Get recognized text and normalize both texts for comparison
+    const recognizedText = result.text.trim();
+    const normalizedRecognizedText = normalizeText(recognizedText);
+    const normalizedExpectedText = normalizeText(text);
 
-      // Generate secure filename
-      const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
+    // Calculate similarity score (simple exact match for now)
+    const isMatch = normalizedRecognizedText === normalizedExpectedText;
+    const confidence = result.confidence || 0;
 
-      // Create secure storage path
-      const storageDir = path.join(
-        process.cwd(),
-        "storage",
-        "transactions",
-        "voice"
-      );
-      await fs.promises.mkdir(storageDir, { recursive: true });
+    // Generate secure filename
+    const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
 
-      // Move file to secure location
-      const securePath = path.join(storageDir, secureFilename);
-      await fs.promises.rename(file.path, securePath);
+    // Create secure storage path
+    const storageDir = path.join(
+      process.cwd(),
+      "storage",
+      "transactions",
+      "voice"
+    );
+    await fs.promises.mkdir(storageDir, { recursive: true });
 
-      // Update transaction with verification data
-      await transaction.verify("voice", {
-        voiceSampleUrl: securePath,
-        recognizedText: recognizedText,
-        expectedText: expectedText,
-        confidence: result.confidence,
-      });
+    // Move file to secure location
+    const securePath = path.join(storageDir, secureFilename);
+    await fs.promises.rename(outputPath, securePath);
 
-      if (recognizedText !== expectedText) {
-        return res.status(400).json({
-          success: false,
-          message: "Voice verification failed - text does not match",
-          data: {
-            recognizedText,
-            expectedText,
-          },
-        });
-      }
+    // Update transaction with verification data
+    await transaction.verify("voice", {
+      voiceSampleUrl: securePath,
+      recognizedText: recognizedText,
+      expectedText: text,
+      confidence: confidence,
+      verified: isMatch
+    });
 
-      // Update transaction status
-      const isVerified = await updateTransactionStatus(transaction);
-
-      res.json({
-        success: true,
-        data: {
-          transactionId: transaction.transactionId,
-          type: transaction.type,
-          amount: transaction.amount,
-          currency: transaction.currency,
-          status: transaction.status,
-          riskScore: transaction.riskScore,
-          verificationData: transaction.verificationData,
-          confidence: result.confidence,
-          isVerified,
-        },
-      });
-    } else {
-      await deleteFile(file.path);
+    if (!isMatch) {
       return res.status(400).json({
         success: false,
-        message: "Voice verification failed",
+        message: "Voice verification failed - text does not match",
+        data: {
+          recognizedText,
+          expectedText: text,
+          confidence,
+          normalizedRecognizedText,
+          normalizedExpectedText
+        },
       });
     }
+
+    // Update transaction status
+    const isVerified = await updateTransactionStatus(transaction);
+
+    // Clean up the temporary files
+    try {
+      await deleteFile(file.path);
+      if (fs.existsSync(outputPath)) {
+        await deleteFile(outputPath);
+      }
+    } catch (error) {
+      console.error("Error cleaning up temporary files:", error);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        transactionId: transaction.transactionId,
+        type: transaction.type,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        status: transaction.status,
+        riskScore: transaction.riskScore,
+        verificationData: transaction.verificationData,
+        confidence: confidence,
+        isVerified,
+      },
+    });
   } catch (error) {
     console.error("Voice verification error:", error);
     if (req.file?.path) {
