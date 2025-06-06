@@ -89,6 +89,32 @@ export const verifyTransactionVoice = createAsyncThunk(
   }
 );
 
+// Verify transaction with both face and voice
+export const verifyTransactionBoth = createAsyncThunk(
+  "transaction/verifyBoth",
+  async ({ transactionId, faceData, voiceData }, { rejectWithValue }) => {
+    try {
+      const formData = new FormData();
+      formData.append("faceImage", faceData.file);
+      formData.append("voiceSample", voiceData.file);
+      formData.append("text", voiceData.text);
+
+      const response = await axiosInstance.post(
+        `/transactions/${transactionId}/verify/both`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response.data);
+    }
+  }
+);
+
 // Delete transaction
 export const deleteTransaction = createAsyncThunk(
   "transaction/delete",
@@ -186,6 +212,21 @@ const transactionSlice = createSlice({
         state.currentTransaction = action.payload.data;
       })
       .addCase(verifyTransactionVoice.rejected, (state, action) => {
+        state.verificationStatus.voice = "failed";
+        state.error = action.payload.message;
+      })
+      // Verify both
+      .addCase(verifyTransactionBoth.pending, (state) => {
+        state.verificationStatus.face = "loading";
+        state.verificationStatus.voice = "loading";
+      })
+      .addCase(verifyTransactionBoth.fulfilled, (state, action) => {
+        state.verificationStatus.face = "succeeded";
+        state.verificationStatus.voice = "succeeded";
+        state.currentTransaction = action.payload.data;
+      })
+      .addCase(verifyTransactionBoth.rejected, (state, action) => {
+        state.verificationStatus.face = "failed";
         state.verificationStatus.voice = "failed";
         state.error = action.payload.message;
       })

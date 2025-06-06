@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   getTransactionStatus,
   resetTransactionState,
+  verifyTransactionBoth,
 } from "./transactionSlice";
 import { getKYCStatus } from "../kyc/kycSlice";
 import Layout from "../../layouts/Layout";
@@ -17,6 +18,8 @@ const TransactionConfirmation = () => {
   const { id } = useParams();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [faceVerificationData, setFaceVerificationData] = useState(null);
+  const [voiceVerificationData, setVoiceVerificationData] = useState(null);
 
   const { currentTransaction, status, error } = useSelector(
     (state) => state.transaction
@@ -65,32 +68,68 @@ const TransactionConfirmation = () => {
     }
   }, [error, navigate]);
 
-  const handleFaceVerificationSuccess = (isVerified) => {
+  const handleFaceVerificationSuccess = (isVerified, data) => {
     if (currentTransaction?.verificationMethod === "both") {
       if (isVerified) {
-        toast.success("Transaction verified successfully");
-        navigate("/");
+        setFaceVerificationData(data);
+        toast.success("Face verification successful");
+        // Check if both verifications are complete
+        if (voiceVerificationData) {
+          handleBothVerificationsComplete();
+        }
       } else {
-        setStep(2);
+        toast.error("Face verification failed. Please try again.");
       }
     } else {
       if (isVerified) {
         toast.success("Transaction verified successfully");
         navigate("/");
       } else {
-        toast.info("Transaction is still pending verification");
-        navigate("/");
+        toast.error("Face verification failed. Please try again.");
       }
     }
   };
 
-  const handleVoiceVerificationSuccess = (isVerified) => {
-    if (isVerified) {
+  const handleVoiceVerificationSuccess = (isVerified, data) => {
+    if (currentTransaction?.verificationMethod === "both") {
+      if (isVerified) {
+        setVoiceVerificationData(data);
+        toast.success("Voice verification successful");
+        // Check if both verifications are complete
+        if (faceVerificationData) {
+          handleBothVerificationsComplete();
+        }
+      } else {
+        toast.error("Voice verification failed. Please try again.");
+      }
+    } else {
+      if (isVerified) {
+        toast.success("Transaction verified successfully");
+        navigate("/");
+      } else {
+        toast.error("Voice verification failed. Please try again.");
+      }
+    }
+  };
+
+  const handleBothVerificationsComplete = async () => {
+    try {
+      // Send both verifications to the server
+      const response = await dispatch(
+        verifyTransactionBoth({
+          transactionId: id,
+          faceData: faceVerificationData,
+          voiceData: voiceVerificationData,
+        })
+      ).unwrap();
+      
       toast.success("Transaction verified successfully");
       navigate("/");
-    } else {
-      toast.info("Transaction is still pending verification");
-      navigate("/");
+    } catch (error) {
+      toast.error("Failed to complete verification. Please try again.");
+      // Reset verification data to allow retry
+      setFaceVerificationData(null);
+      setVoiceVerificationData(null);
     }
   };
 
@@ -190,16 +229,23 @@ const TransactionConfirmation = () => {
           />
         );
       case "both":
-        return step === 1 ? (
-          <FaceVerification
-            transactionId={id}
-            onSuccess={handleFaceVerificationSuccess}
-          />
-        ) : (
-          <VoiceVerification
-            transactionId={id}
-            onSuccess={handleVoiceVerificationSuccess}
-          />
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-4 rounded-lg shadow">
+              <FaceVerification
+                transactionId={id}
+                onSuccess={handleFaceVerificationSuccess}
+                isVerified={!!faceVerificationData}
+              />
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow">
+              <VoiceVerification
+                transactionId={id}
+                onSuccess={handleVoiceVerificationSuccess}
+                isVerified={!!voiceVerificationData}
+              />
+            </div>
+          </div>
         );
       default:
         return null;

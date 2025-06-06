@@ -149,7 +149,7 @@ transactionSchema.methods.verify = async function (verificationMethod, verificat
   // Update verification data
   if (verificationMethod === "face" || verificationMethod === "both") {
     this.verificationData.faceVerification = {
-      verified: true,
+      verified: verificationData.verified,
       confidence: verificationData.faceConfidence,
       timestamp,
       imageUrl: verificationData.faceImageUrl,
@@ -158,7 +158,7 @@ transactionSchema.methods.verify = async function (verificationMethod, verificat
 
   if (verificationMethod === "voice" || verificationMethod === "both") {
     this.verificationData.voiceVerification = {
-      verified: true,
+      verified: verificationData.verified,
       confidence: verificationData.voiceConfidence,
       timestamp,
       audioUrl: verificationData.voiceAudioUrl,
@@ -177,15 +177,6 @@ transactionSchema.methods.verify = async function (verificationMethod, verificat
 
   // Calculate new risk score
   this.calculateRiskScore();
-
-  // Update status based on risk score
-  if (this.riskScore >= 70) {
-    this.status = "verified";
-  } else if (this.riskScore >= 40) {
-    this.status = "pending";
-  } else {
-    this.status = "rejected";
-  }
 
   await this.save();
   return this;
@@ -206,15 +197,15 @@ transactionSchema.pre('save', function(next) {
 
   // Check verification status based on verification method
   if (this.verificationMethod === 'both') {
-    if (this.verificationData?.face?.verified && 
-        this.verificationData?.voice?.verified) {
+    if (this.verificationData?.faceVerification?.verified && 
+        this.verificationData?.voiceVerification?.verified) {
       this.status = 'approved';
     }
   } else if (this.verificationMethod === 'face' && 
-             this.verificationData?.face?.verified) {
+             this.verificationData?.faceVerification?.verified) {
     this.status = 'approved';
   } else if (this.verificationMethod === 'voice' && 
-             this.verificationData?.voice?.verified) {
+             this.verificationData?.voiceVerification?.verified) {
     this.status = 'approved';
   }
 
