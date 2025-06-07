@@ -52,11 +52,14 @@ const fileFilter = (req, file, cb) => {
     "audio/wav",
     "audio/mpeg",
     "audio/mp4",
+    "audio/webm",
+    "audio/webm;codecs=opus"
   ];
 
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
+    console.log("Rejected file type:", file.mimetype);
     cb(new Error("Invalid file type. Only JPEG, PNG, PDF, WebM, MP4, WAV, MP3, and M4A files are allowed."), false);
   }
 };

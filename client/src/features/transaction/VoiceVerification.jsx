@@ -10,7 +10,7 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
   const mediaRecorderRef = useRef(null);
   const [isRecording, setIsRecording] = useState(false);
   const audioChunksRef = useRef([]);
-  const verificationText = "please verify this transaction";
+  const verificationText = "hello and goodbye";
   const [recordedAudio, setRecordedAudio] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -21,11 +21,18 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
           echoCancellation: true,
           noiseSuppression: true,
           sampleRate: 16000,
+          channelCount: 1, // Mono audio
         },
       });
 
+      // Check for supported MIME types
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
+        mimeType,
+        audioBitsPerSecond: 128000, // 128kbps
       });
 
       mediaRecorderRef.current = mediaRecorder;
@@ -40,11 +47,24 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
       mediaRecorder.onstop = () => {
         // Create a single blob from all chunks
         const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
+          type: mimeType,
         });
-        const file = new File([audioBlob], "voice.webm", {
-          type: "audio/webm",
+        
+        // Create a File object with the correct extension based on MIME type
+        const fileExtension = mimeType.includes('opus') ? 'webm' : 'webm';
+        const fileName = `voice.${fileExtension}`;
+        
+        const file = new File([audioBlob], fileName, {
+          type: mimeType,
+          lastModified: Date.now(),
         });
+        
+        console.log('Created audio file:', {
+          name: file.name,
+          type: file.type,
+          size: file.size
+        });
+        
         setRecordedAudio(file);
       };
 
@@ -80,6 +100,14 @@ const VoiceVerification = ({ transactionId, onSuccess }) => {
     try {
       setIsProcessing(true);
       const formData = new FormData();
+      
+      // Log the file details before sending
+      console.log('Sending audio file:', {
+        name: recordedAudio.name,
+        type: recordedAudio.type,
+        size: recordedAudio.size
+      });
+      
       formData.append("voiceSample", recordedAudio);
       formData.append("text", verificationText);
 
