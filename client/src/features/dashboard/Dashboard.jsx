@@ -15,7 +15,7 @@ const Dashboard = () => {
     type: "payment",
     amount: "",
     currency: "USD",
-    verificationMethod: "both",
+    verificationMethod: "face",
   });
 
   useEffect(() => {
@@ -39,7 +39,7 @@ const Dashboard = () => {
         type: "payment",
         amount: "",
         currency: "USD",
-        verificationMethod: "both",
+        verificationMethod: "face",
       });
       toast.success("Transaction created successfully");
       navigate(`/transaction/${response.data.transactionId}`);
@@ -186,6 +186,12 @@ const Dashboard = () => {
                         scope="col"
                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                       >
+                        Verification Method
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
                         Status
                       </th>
                       <th
@@ -221,6 +227,9 @@ const Dashboard = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {transaction.amount} {transaction.currency}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {transaction.verificationMethod || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span

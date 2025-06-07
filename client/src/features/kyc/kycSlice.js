@@ -103,9 +103,20 @@ export const resetKYCStep = createAsyncThunk(
   "kyc/resetStep",
   async (stepKey, { rejectWithValue }) => {
     try {
-      const response = await axiosInstance.post("/kyc/reset-step", {
-        step: stepKey,
-      });
+      // Convert step key to match backend format
+      const stepMap = {
+        faceVerification: "face",
+        documentVerification: "document",
+        videoVerification: "video",
+        voiceVerification: "voice"
+      };
+      
+      const step = stepMap[stepKey];
+      if (!step) {
+        throw new Error("Invalid step specified");
+      }
+
+      const response = await axiosInstance.post(`/kyc/reset-step/${step}`);
       toast.success("KYC step reset successfully");
       return response.data.data;
     } catch (error) {

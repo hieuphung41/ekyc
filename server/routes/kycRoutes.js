@@ -23,8 +23,8 @@ router.post(
   "/document",
   protect,
   uploadMiddleware.fields([
-    { name: "frontImage", maxCount: 1 },
-    { name: "backImage", maxCount: 1 },
+    { name: "front", maxCount: 1 },
+    { name: "back", maxCount: 1 },
   ]),
   uploadIDDocument
 );
@@ -70,7 +70,7 @@ router.get("/users/status", protect, getUserKycStatus)
 
 router.put("/verify/:id", protect, authorize("admin"), verifyKYC);
 
-router.post("/reset-step", protect, resetKycStep);
+router.post("/reset-step/:step", protect, resetKycStep);
 
 // Admin only routes
 router.get("/all", protect, authorize("admin"), getAllKYC);

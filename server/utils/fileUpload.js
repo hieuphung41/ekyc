@@ -35,77 +35,29 @@ if (hasCloudinaryCredentials) {
     },
   });
 } else {
-  // Create uploads directory if it doesn't exist
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-
-  // Configure local disk storage
-  storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-      const userId = req.user?.id || "anonymous";
-      const userDir = path.join(process.cwd(), "uploads", userId);
-
-      if (!fs.existsSync(userDir)) {
-        fs.mkdirSync(userDir, { recursive: true });
-      }
-
-      cb(null, userDir);
-    },
-    filename: function (req, file, cb) {
-      const fileId = crypto.randomBytes(16).toString("hex");
-      cb(null, `${file.fieldname}-${fileId}${path.extname(file.originalname)}`);
-    },
-  });
+  // Use memory storage instead of disk storage
+  storage = multer.memoryStorage();
 }
 
-// File filter function with detailed error handling
+// File filter function
 const fileFilter = (req, file, cb) => {
-  // Allow different file types based on the fieldname
-  if (file.fieldname === "faceVideo" || file.fieldname === "videoFile") {
-    // Video files for face verification
-    if (
-      file.mimetype.startsWith("video/") ||
-      file.mimetype === "application/octet-stream" || // For blob uploads sometimes
-      file.originalname.endsWith(".webm") ||
-      file.originalname.endsWith(".mp4")
-    ) {
-      return cb(null, true);
-    }
-    // Video-specific error
-    req.fileValidationError =
-      "Invalid video format. Please use a supported video format like WebM or MP4.";
-    return cb(null, false);
-  } else if (file.fieldname === "audioFile" || file.fieldname === "voiceSample") {
-    // Audio files for voice verification
-    if (
-      file.mimetype.startsWith("audio/") ||
-      file.mimetype === "application/octet-stream" || // For blob uploads
-      file.mimetype === "audio/webm" || // Add WebM audio support
-      file.originalname.endsWith(".wav") ||
-      file.originalname.endsWith(".mp3") ||
-      file.originalname.endsWith(".m4a") ||
-      file.originalname.endsWith(".webm")
-    ) {
-      return cb(null, true);
-    }
-    // Audio-specific error
-    req.fileValidationError =
-      "Invalid audio format. Please use a supported audio format like WAV, MP3, M4A, or WebM.";
-    return cb(null, false);
+  // Define allowed file types
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+    "application/pdf",
+    "video/webm",
+    "video/mp4",
+    "audio/wav",
+    "audio/mpeg",
+    "audio/mp4",
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
   } else {
-    // Image or PDF for other uploads (like ID card)
-    if (
-      file.mimetype.startsWith("image/") ||
-      file.mimetype === "application/pdf"
-    ) {
-      return cb(null, true);
-    }
-    // Image-specific error
-    req.fileValidationError =
-      "Invalid file type. Only images and PDFs are allowed for this field.";
-    return cb(null, false);
+    cb(new Error("Invalid file type. Only JPEG, PNG, PDF, WebM, MP4, WAV, MP3, and M4A files are allowed."), false);
   }
 };
 
@@ -157,7 +109,6 @@ export const uploadMiddleware = {
       });
     };
   },
-
   fields: (fields) => {
     return (req, res, next) => {
       multerUpload.fields(fields)(req, res, (err) => {
@@ -197,21 +148,12 @@ export const uploadMiddleware = {
   },
 };
 
-// Function to delete file (works with both Cloudinary and local storage)
+// Helper function to delete file
 export const deleteFile = async (filePath) => {
   try {
-    if (hasCloudinaryCredentials && filePath.includes("cloudinary")) {
-      await cloudinary.uploader.destroy(filePath);
-    } else {
-      // For local storage
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-    return true;
+    await fs.promises.unlink(filePath);
   } catch (error) {
     console.error("Error deleting file:", error);
-    return false;
   }
 };
 

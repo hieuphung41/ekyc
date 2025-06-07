@@ -11,15 +11,36 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import sdk from "microsoft-cognitiveservices-speech-sdk";
 import dotenv from "dotenv";
+import {
+  uploadToBlobStorage,
+  deleteFromBlobStorage,
+  CONTAINERS,
+  generateSasToken,
+} from "../utils/azureStorage.js";
+import { promisify } from "util";
+import { exec } from "child_process";
 
 dotenv.config();
 
 const UPLOAD_DIR =
   process.env.ID_UPLOAD_DIR || path.join(process.cwd(), "public", "uploads");
-const FPT_API_KEY = process.env.FPT_AI_API_KEY;
+const FPT_AI_API_KEY = process.env.FPT_AI_API_KEY;
 const ISSUING_COUNTRY_DEFAULT = process.env.ID_ISSUING_COUNTRY || "Vietnam";
 const AZURE_SPEECH_KEY = process.env.AZURE_KEY;
 const AZURE_SPEECH_REGION = "eastus";
+
+const execAsync = promisify(exec);
+
+// Add this function at the top level
+const checkFFmpegInstallation = async () => {
+  try {
+    await execAsync("ffmpeg -version");
+    return true;
+  } catch (error) {
+    console.error("FFmpeg is not installed or not in PATH:", error);
+    return false;
+  }
+};
 
 async function safeUnlink(filePath) {
   try {
@@ -47,7 +68,6 @@ export const uploadFacePhoto = async (req, res) => {
     // Validate file type
     const allowedTypes = ["image/jpeg", "image/png"];
     if (!allowedTypes.includes(file.mimetype)) {
-      await deleteFile(file.path);
       return res.status(400).json({
         success: false,
         message: "Invalid file type. Only JPEG and PNG are allowed",
@@ -57,7 +77,6 @@ export const uploadFacePhoto = async (req, res) => {
     // Validate file size (max 5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      await deleteFile(file.path);
       return res.status(400).json({
         success: false,
         message: "File too large. Maximum size: 5MB",
@@ -67,26 +86,23 @@ export const uploadFacePhoto = async (req, res) => {
     // Find existing KYC application
     let kyc = await KYC.findOne({ userId: req.user.id });
     if (!kyc) {
-      await deleteFile(file.path);
       return res.status(404).json({
         success: false,
         message: "KYC application not found",
       });
     }
 
-    // Generate secure filename
+    // Generate a unique blob name
     const fileExtension = path.extname(file.originalname);
-    const secureFilename = `${crypto
-      .randomBytes(16)
-      .toString("hex")}${fileExtension}`;
+    const blobName = `${req.user.id}-face-${Date.now()}${fileExtension}`;
 
-    // Create secure storage path
-    const storageDir = path.join(process.cwd(), "storage", "biometric", "face");
-    await fs.promises.mkdir(storageDir, { recursive: true });
-
-    // Move file to secure location
-    const securePath = path.join(storageDir, secureFilename);
-    await fs.promises.rename(file.path, securePath);
+    // Upload the file to Azure Blob Storage
+    const blobUrl = await uploadToBlobStorage(
+      file.buffer,
+      CONTAINERS.FACE,
+      blobName,
+      file.mimetype
+    );
 
     // Process face metadata if available
     let livenessScore = 0;
@@ -104,7 +120,7 @@ export const uploadFacePhoto = async (req, res) => {
 
     // Update face data
     kyc.biometricData.faceData = {
-      imageUrl: securePath,
+      imageUrl: blobUrl,
       verificationStatus: "pending",
       confidence: confidence,
       livenessScore: livenessScore,
@@ -123,6 +139,9 @@ export const uploadFacePhoto = async (req, res) => {
     }
 
     await kyc.save();
+
+    // Clean up the temporary file
+    await deleteFile(file.path);
 
     // Update KYC state in cookie
     res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
@@ -158,195 +177,182 @@ export const uploadFacePhoto = async (req, res) => {
 // @access  Private
 export const uploadIDDocument = async (req, res) => {
   try {
-    // Check if FPT API key is configured
-    if (!FPT_API_KEY) {
+    const { documentType } = req.body;
+    const frontImage = req.files?.front?.[0];
+    const backImage = req.files?.back?.[0];
+
+    if (!FPT_AI_API_KEY) {
       return res.status(500).json({
         success: false,
-        message: "FPT AI API key is not configured",
+        message: "FPT API key not configured",
       });
     }
 
-    const { frontImage, backImage } = req.files;
-    const { documentType } = req.body;
-    const userId = req.user.id;
-
-    // Validate document type
-    const validTypes = ["nationalId", "passport", "drivingLicense"];
-    if (!validTypes.includes(documentType)) {
+    if (
+      !documentType ||
+      !["national_id", "passport", "driving_license"].includes(documentType)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid document type",
       });
     }
 
-    // Validate files
-    if (!frontImage?.[0] || !backImage?.[0]) {
+    if (!frontImage || !backImage) {
       return res.status(400).json({
         success: false,
         message: "Both front and back images are required",
       });
     }
 
-    const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
-    if (
-      !allowedTypes.includes(frontImage[0].mimetype) ||
-      !allowedTypes.includes(backImage[0].mimetype)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid file format. Only PNG and JPG are allowed.",
-      });
+    const userId = req.user.id;
+
+    // Generate unique blob names
+    const frontBlobName = `${userId}-${documentType}-front-${Date.now()}.${
+      frontImage.mimetype.split("/")[1]
+    }`;
+    const backBlobName = `${userId}-${documentType}-back-${Date.now()}.${
+      backImage.mimetype.split("/")[1]
+    }`;
+
+    // Upload images to Azure Blob Storage
+    const [frontBlobUrl, backBlobUrl] = await Promise.all([
+      uploadToBlobStorage(
+        frontImage.buffer,
+        CONTAINERS.DOCUMENT,
+        frontBlobName,
+        frontImage.mimetype
+      ),
+      uploadToBlobStorage(
+        backImage.buffer,
+        CONTAINERS.DOCUMENT,
+        backBlobName,
+        backImage.mimetype
+      ),
+    ]);
+
+    // Process with FPT AI API based on document type
+    let fptEndpoint;
+    switch (documentType) {
+      case "national_id":
+        fptEndpoint = "https://api.fpt.ai/vision/idr/vnm";
+        break;
+      case "passport":
+        fptEndpoint = "https://api.fpt.ai/vision/passport/vnm";
+        break;
+      case "driving_license":
+        fptEndpoint = "https://api.fpt.ai/vision/dlr/vnm";
+        break;
     }
 
-    try {
-      await fsp.access(UPLOAD_DIR);
-    } catch {
-      await fsp.mkdir(UPLOAD_DIR, { recursive: true });
-    }
-
-    const frontFileName = `${userId}-${documentType}-front-${Date.now()}.${
-      frontImage[0].mimetype.split("/")[1]
-    }`;
-    const backFileName = `${userId}-${documentType}-back-${Date.now()}.${
-      backImage[0].mimetype.split("/")[1]
-    }`;
-    const frontFilePath = path.join(UPLOAD_DIR, frontFileName);
-    const backFilePath = path.join(UPLOAD_DIR, backFileName);
-
-    const frontBuffer = await fsp.readFile(frontImage[0].path);
-    const backBuffer = await fsp.readFile(backImage[0].path);
-
-    await fsp.writeFile(frontFilePath, frontBuffer);
-    await fsp.writeFile(backFilePath, backBuffer);
-
-    // Process with FPT AI based on document type
     const formData = new FormData();
-    formData.append("image", fs.createReadStream(frontFilePath));
+    formData.append("image", frontImage.buffer, {
+      filename: frontBlobName,
+      contentType: frontImage.mimetype,
+    });
 
-    let fptResponse;
-    if (documentType === "nationalId") {
-      fptResponse = await axios.post(
-        "https://api.fpt.ai/vision/idr/vnm",
-        formData,
-        {
-          headers: {
-            "api-key": FPT_API_KEY,
-            "Content-Type": "multipart/form-data",
-            ...formData.getHeaders(),
-          },
-        }
-      );
-    } else if (documentType === "passport") {
-      fptResponse = await axios.post(
-        "https://api.fpt.ai/vision/passport/vnm",
-        formData,
-        {
-          headers: {
-            "api-key": FPT_API_KEY,
-            "Content-Type": "multipart/form-data",
-            ...formData.getHeaders(),
-          },
-        }
-      );
-    } else if (documentType === "drivingLicense") {
-      fptResponse = await axios.post(
-        "https://api.fpt.ai/vision/dlr/vnm",
-        formData,
-        {
-          headers: {
-            "api-key": FPT_API_KEY,
-            "Content-Type": "multipart/form-data",
-            ...formData.getHeaders(),
-          },
-        }
-      );
+    const response = await axios.post(fptEndpoint, formData, {
+      headers: {
+        "api-key": FPT_AI_API_KEY,
+        ...formData.getHeaders(),
+      },
+    });
+
+    const fptData = response.data;
+
+    if (!fptData) {
+      throw new Error("Invalid response from FPT AI API");
     }
 
-    const fptData = fptResponse.data;
+    const documentData = fptData.data[fptData.data.length - 1];
+    const documentNumber =
+      documentData.id ||
+      documentData.passport_number ||
+      documentData.license_number;
 
-    if (fptResponse.status === 200 && fptData.data && fptData.data.length > 0) {
-      const extractedData = fptData.data[0];
-      let documentNumber;
+    // Check if document number already exists
+    const existingKYC = await KYC.findOne({
+      "documents.documentNumber": documentNumber,
+    });
 
-      // Extract document number based on document type
-      switch (documentType) {
-        case "nationalId":
-          documentNumber = extractedData.id;
-          break;
-        case "passport":
-          documentNumber = extractedData.passport_number;
-          break;
-        case "drivingLicense":
-          documentNumber = extractedData.license_number;
-          break;
-      }
+    if (existingKYC) {
+      // Delete uploaded blobs
+      await Promise.all([
+        deleteFromBlobStorage(CONTAINERS.DOCUMENT, frontBlobName),
+        deleteFromBlobStorage(CONTAINERS.DOCUMENT, backBlobName),
+      ]);
 
-      const existingKYC = await KYC.findOne({
-        "documents.documentNumber": documentNumber,
-      });
-
-      if (existingKYC) {
-        await safeUnlink(frontFilePath);
-        await safeUnlink(backFilePath);
-        return res.status(400).json({
-          success: false,
-          message: "This document number has already been registered",
-        });
-      }
-
-      const kyc = await KYC.findOne({ userId });
-      if (!kyc) {
-        await safeUnlink(frontFilePath);
-        await safeUnlink(backFilePath);
-        return res.status(404).json({
-          success: false,
-          message: "KYC application not found",
-        });
-      }
-
-      // Add new document
-      kyc.documents.push({
-        type: documentType,
-        documentNumber: documentNumber,
-        issuingCountry: ISSUING_COUNTRY_DEFAULT,
-        frontImageUrl: `/uploads/${frontFileName}`,
-        backImageUrl: `/uploads/${backFileName}`,
-        verificationStatus: "pending",
-        ocrData: {
-          extractedFields: extractedData,
-          confidence: fptData.confidence || 1,
-          processedAt: new Date(),
-        },
-      });
-
-      // Mark document verification step as completed
-      kyc.completedSteps.documentVerification = {
-        completed: true,
-        completedAt: new Date(),
-        attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1,
-      };
-
-      await kyc.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Document processed successfully",
-        data: kyc.documents[kyc.documents.length - 1],
-      });
-    } else {
-      await safeUnlink(frontFilePath);
-      await safeUnlink(backFilePath);
       return res.status(400).json({
         success: false,
-        message: "Document verification failed",
+        message: "Document number already registered",
       });
     }
+
+    // Find existing KYC application
+    let kyc = await KYC.findOne({ userId });
+    if (!kyc) {
+      // Delete uploaded blobs
+      await Promise.all([
+        deleteFromBlobStorage(CONTAINERS.DOCUMENT, frontBlobName),
+        deleteFromBlobStorage(CONTAINERS.DOCUMENT, backBlobName),
+      ]);
+
+      return res.status(404).json({
+        success: false,
+        message: "KYC application not found",
+      });
+    }
+
+    // Add new document
+    kyc.documents.push({
+      type: documentType,
+      frontImageUrl: frontBlobUrl,
+      backImageUrl: backBlobUrl,
+      documentNumber: documentNumber,
+      verificationStatus: "pending",
+      uploadedAt: new Date(),
+      extractedData: documentData,
+      ocrData: {
+        extractedFields: documentData,
+        confidence: fptData.confidence || 1,
+        processedAt: new Date(),
+      },
+    });
+
+    // Update verification status
+    kyc.verificationStatus = "pending";
+    kyc.currentStep = "face_verification";
+
+    // Mark document verification step as completed
+    kyc.completedSteps.documentVerification = {
+      completed: true,
+      completedAt: new Date(),
+      attempts: (kyc.completedSteps.documentVerification?.attempts || 0) + 1,
+    };
+
+    await kyc.save();
+
+    // Update KYC state in cookie
+    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "development",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.json({
+      success: true,
+      data: {
+        status: "pending",
+        currentStep: kyc.currentStep,
+        completedSteps: kyc.completedSteps,
+      },
+    });
   } catch (error) {
-    console.error("Error processing document:", error);
-    return res.status(500).json({
+    console.error("Document upload error:", error);
+    res.status(500).json({
       success: false,
-      message: "Failed to process document",
-      error: error.message,
+      message: "Error uploading document",
     });
   }
 };
@@ -369,7 +375,6 @@ export const uploadVideo = async (req, res) => {
     // Validate file type
     const allowedTypes = ["video/webm", "video/mp4"];
     if (!allowedTypes.includes(videoFile.mimetype)) {
-      await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
         message: "Invalid file type. Only WebM and MP4 are allowed",
@@ -379,7 +384,6 @@ export const uploadVideo = async (req, res) => {
     // Validate file size (max 50MB)
     const maxSize = 50 * 1024 * 1024;
     if (videoFile.size > maxSize) {
-      await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
         message: "File too large. Maximum size: 50MB",
@@ -389,17 +393,15 @@ export const uploadVideo = async (req, res) => {
     // Find existing KYC application
     let kyc = await KYC.findOne({ userId });
     if (!kyc) {
-      await deleteFile(videoFile.path);
       return res.status(404).json({
         success: false,
         message: "KYC application not found",
       });
     }
 
-    // Get the ID card image from the most recent document
+    // Get the most recent document from KYC
     const latestDocument = kyc.documents[kyc.documents.length - 1];
     if (!latestDocument || !latestDocument.frontImageUrl) {
-      await deleteFile(videoFile.path);
       return res.status(400).json({
         success: false,
         message:
@@ -407,26 +409,10 @@ export const uploadVideo = async (req, res) => {
       });
     }
 
-    // Get absolute path for ID card image
-    const idCardPath = path.join(
-      process.cwd(),
-      "public",
-      latestDocument.frontImageUrl
-    );
-
-    // Verify ID card image exists
-    try {
-      await fsp.access(idCardPath);
-    } catch (error) {
-      await deleteFile(videoFile.path);
-      return res.status(400).json({
-        success: false,
-        message: "ID card image file not found",
-      });
-    }
-
     // Handle video conversion
-    let videoPath = videoFile.path;
+    let videoBuffer = videoFile.buffer;
+    let videoMimeType = videoFile.mimetype;
+
     if (videoFile.mimetype === "video/webm") {
       try {
         // Check if ffmpeg is available
@@ -434,11 +420,21 @@ export const uploadVideo = async (req, res) => {
           throw new Error("ffmpeg not found");
         }
 
-        const mp4Path = videoFile.path.replace(".webm", ".mp4");
+        // Create temporary files for conversion
+        const tempDir = path.join(process.cwd(), "uploads", "temp");
+        await fs.promises.mkdir(tempDir, { recursive: true });
+
+        const inputPath = path.join(tempDir, `input-${Date.now()}.webm`);
+        const outputPath = path.join(tempDir, `output-${Date.now()}.mp4`);
+
+        // Write buffer to temporary file
+        await fs.promises.writeFile(inputPath, videoFile.buffer);
+
+        // Convert video
         await new Promise((resolve, reject) => {
-          ffmpeg(videoFile.path)
+          ffmpeg(inputPath)
             .setFfmpegPath(ffmpegStatic)
-            .output(mp4Path)
+            .output(outputPath)
             .on("end", () => {
               resolve();
             })
@@ -447,15 +443,20 @@ export const uploadVideo = async (req, res) => {
             })
             .run();
         });
-        videoPath = mp4Path;
+
+        // Read converted file
+        videoBuffer = await fs.promises.readFile(outputPath);
+        videoMimeType = "video/mp4";
+
+        // Clean up temporary files
+        await fs.promises.unlink(inputPath);
+        await fs.promises.unlink(outputPath);
       } catch (error) {
         console.error("Error converting video:", error);
-        // If conversion fails, try to use the original file
         if (error.message.includes("ffmpeg not found")) {
           console.warn("FFmpeg not found, using original video file");
           // Continue with original file
         } else {
-          await deleteFile(videoFile.path);
           return res.status(500).json({
             success: false,
             message: "Error converting video format",
@@ -464,126 +465,132 @@ export const uploadVideo = async (req, res) => {
       }
     }
 
-    // Prepare files for FPT AI liveness detection
-    const formData = new FormData();
+    // Generate a unique blob name for Azure Storage
+    const blobName = `${userId}-video-${Date.now()}.${
+      videoMimeType.split("/")[1]
+    }`;
 
-    // Add video file
-    formData.append("video", fs.createReadStream(videoPath), {
-      filename: "video.mp4",
-      contentType:
-        videoFile.mimetype === "video/webm" ? "video/webm" : "video/mp4",
-    });
-
-    // Add ID card image
-    formData.append("cmnd", fs.createReadStream(idCardPath), {
-      filename: "id_card.jpg",
-      contentType: "image/jpeg",
-    });
-
-    // Call FPT AI liveness detection API
-    const fptResponse = await axios.post(
-      "https://api.fpt.ai/dmp/liveness/v3",
-      formData,
-      {
-        headers: {
-          api_key: FPT_API_KEY,
-          ...formData.getHeaders(),
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      }
-    );
-
-    // Process FPT AI response
-    if (fptResponse.status === 200 && fptResponse.data) {
-      const livenessResult = fptResponse.data;
-
-      // Generate secure filename for video
-      const secureFilename = `${crypto.randomBytes(16).toString("hex")}.mp4`;
-
-      // Create secure storage path
-      const storageDir = path.join(
-        process.cwd(),
-        "storage",
-        "biometric",
-        "video"
+    try {
+      // Upload to Azure Blob Storage
+      const blobUrl = await uploadToBlobStorage(
+        videoBuffer,
+        CONTAINERS.VIDEO,
+        blobName,
+        videoMimeType
       );
-      await fs.promises.mkdir(storageDir, { recursive: true });
 
-      // Move file to secure location
-      const securePath = path.join(storageDir, secureFilename);
-      await fs.promises.rename(videoPath, securePath);
+      // Prepare files for FPT AI liveness detection
+      const formData = new FormData();
 
-      // Clean up original file if it was converted
-      if (videoPath !== videoFile.path) {
-        await deleteFile(videoFile.path);
-      }
+      // Add video file
+      formData.append("video", videoBuffer, {
+        filename: "video.mp4",
+        contentType: videoMimeType,
+      });
 
-      // Update video data with liveness results
-      kyc.biometricData.videoData = {
-        videoUrl: securePath,
-        verificationStatus: "verified", // Always mark as verified for now
-        confidence: 1,
-        livenessScore: 1,
-        faceMatchScore: 1,
-        uploadedAt: new Date(),
-        fileType:
-          videoFile.mimetype === "video/webm" ? "video/webm" : "video/mp4",
-        fileSize: (await fsp.stat(securePath)).size,
-        // Commenting out FPT response for now
-        // fptResponse: livenessResult,
-      };
-
-      // Mark video verification step as completed immediately
-      kyc.completedSteps.videoVerification = {
-        completed: true,
-        completedAt: new Date(),
-        attempts: (kyc.completedSteps.videoVerification?.attempts || 0) + 1,
-      };
-
-      // If all steps are completed, change status to pending review
-      if (
-        kyc.completedSteps.faceVerification?.completed &&
-        kyc.completedSteps.documentVerification?.completed &&
-        kyc.completedSteps.videoVerification?.completed
-      ) {
-        // Let the pre-save middleware handle the status update
-        // Update user's verification status
-        await User.findByIdAndUpdate(userId, {
-          isVerified: true,
-          verificationStatus: "approved",
+      // Add ID card image from Azure Blob Storage
+      const idCardUrl = latestDocument.frontImageUrl;
+      if (!idCardUrl) {
+        await deleteFromBlobStorage(CONTAINERS.VIDEO, blobName);
+        return res.status(400).json({
+          success: false,
+          message: "ID card image URL is missing",
         });
       }
 
-      await kyc.save();
-
-      res.json({
-        success: true,
-        data: {
-          status: kyc.status,
-          // Commenting out scores for now
-          // livenessScore: livenessResult.liveness_score,
-          // faceMatchScore: livenessResult.face_match_score,
-          currentStep: kyc.currentStep,
-          completedSteps: kyc.completedSteps,
-        },
-      });
-    } else {
-      // Clean up files
-      await deleteFile(videoPath);
-      if (videoPath !== videoFile.path) {
-        await deleteFile(videoFile.path);
+      // Extract blob name from the URL
+      const idCardBlobName = idCardUrl.split("/").pop();
+      if (!idCardBlobName) {
+        await deleteFromBlobStorage(CONTAINERS.VIDEO, blobName);
+        return res.status(400).json({
+          success: false,
+          message: "Invalid ID card image URL format",
+        });
       }
-      return res.status(400).json({
-        success: false,
-        message: "Liveness detection failed",
+
+      const idCardBlobUrl = await generateSasToken(
+        CONTAINERS.DOCUMENT,
+        idCardBlobName
+      );
+      formData.append("cmnd", idCardBlobUrl, {
+        filename: "id_card.jpg",
+        contentType: "image/jpeg",
       });
+
+      // Call FPT AI liveness detection API
+      const fptResponse = await axios.post(
+        "https://api.fpt.ai/dmp/liveness/v3",
+        formData,
+        {
+          headers: {
+            api_key: FPT_AI_API_KEY,
+            ...formData.getHeaders(),
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        }
+      );
+
+      // Process FPT AI response
+      if (fptResponse.status === 200 && fptResponse.data) {
+        const livenessResult = fptResponse.data;
+
+        // Update video data with liveness results
+        kyc.biometricData.videoData = {
+          videoUrl: blobUrl,
+          verificationStatus: "verified",
+          confidence: 1,
+          livenessScore: 1,
+          faceMatchScore: 1,
+          uploadedAt: new Date(),
+          fileType: videoMimeType,
+          fileSize: videoFile.size,
+        };
+
+        // Mark video verification step as completed
+        kyc.completedSteps.videoVerification = {
+          completed: true,
+          completedAt: new Date(),
+          attempts: (kyc.completedSteps.videoVerification?.attempts || 0) + 1,
+        };
+
+        // If all steps are completed, update user verification status
+        if (
+          kyc.completedSteps.faceVerification?.completed &&
+          kyc.completedSteps.documentVerification?.completed &&
+          kyc.completedSteps.videoVerification?.completed
+        ) {
+          await User.findByIdAndUpdate(userId, {
+            isVerified: true,
+            verificationStatus: "approved",
+          });
+        }
+
+        await kyc.save();
+
+        res.json({
+          success: true,
+          data: {
+            status: kyc.status,
+            currentStep: kyc.currentStep,
+            completedSteps: kyc.completedSteps,
+          },
+        });
+      } else {
+        // Clean up blob
+        await deleteFromBlobStorage(CONTAINERS.VIDEO, blobName);
+        return res.status(400).json({
+          success: false,
+          message: "Liveness detection failed",
+        });
+      }
+    } catch (error) {
+      // Clean up blob on error
+      await deleteFromBlobStorage(CONTAINERS.VIDEO, blobName);
+      throw error;
     }
   } catch (error) {
     console.error("Video upload error:", error);
-    if (req.file?.path) {
-      await deleteFile(req.file.path);
-    }
     res.status(500).json({
       success: false,
       message: "Error uploading video",
@@ -860,117 +867,143 @@ export const verifyKYC = async (req, res) => {
 // @access  Private
 export const resetKycStep = async (req, res) => {
   try {
-    const { step } = req.body;
+    const { step } = req.params;
+    const userId = req.user.id;
 
-    if (
-      !step ||
-      ![
-        "faceVerification",
-        "documentVerification",
-        "videoVerification",
-        "voiceVerification",
-      ].includes(step)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid step specified",
-      });
-    }
-
-    const kyc = await KYC.findOne({ userId: req.user.id });
-
+    const kyc = await KYC.findOne({ userId });
     if (!kyc) {
       return res.status(404).json({
         success: false,
-        message: "No KYC application found",
+        message: "KYC application not found",
       });
     }
 
-    if (kyc.status === "approved") {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot reset steps for an approved KYC application",
+    // Reset step data and clean up storage
+    switch (step) {
+      case "document":
+        // Delete document files from Azure Storage
+        if (kyc.documents && kyc.documents.length > 0) {
+          const latestDoc = kyc.documents[kyc.documents.length - 1];
+          if (latestDoc.frontImageUrl) {
+            const frontBlobName = latestDoc.frontImageUrl.split("/").pop();
+            await deleteFromBlobStorage(CONTAINERS.DOCUMENT, frontBlobName);
+          }
+          if (latestDoc.backImageUrl) {
+            const backBlobName = latestDoc.backImageUrl.split("/").pop();
+            await deleteFromBlobStorage(CONTAINERS.DOCUMENT, backBlobName);
+          }
+        }
+
+        // Reset document data in database
+        kyc.documents = [];
+        kyc.completedSteps.documentVerification = {
+          completed: false,
+          completedAt: null,
+          attempts: 0,
+        };
+        break;
+
+      case "face":
+        // Delete face image from Azure Storage
+        if (kyc.biometricData?.faceData?.imageUrl) {
+          const faceBlobName = kyc.biometricData.faceData.imageUrl
+            .split("/")
+            .pop();
+          await deleteFromBlobStorage(CONTAINERS.FACE, faceBlobName);
+        }
+
+        // Reset face data in database
+        kyc.biometricData.faceData = null;
+        kyc.completedSteps.faceVerification = {
+          completed: false,
+          completedAt: null,
+          attempts: 0,
+        };
+        break;
+
+      case "video":
+        // Delete video from Azure Storage
+        if (kyc.biometricData?.videoData?.videoUrl) {
+          const videoBlobName = kyc.biometricData.videoData.videoUrl
+            .split("/")
+            .pop();
+          await deleteFromBlobStorage(CONTAINERS.VIDEO, videoBlobName);
+        }
+
+        // Reset video data in database
+        kyc.biometricData.videoData = null;
+        kyc.completedSteps.videoVerification = {
+          completed: false,
+          completedAt: null,
+          attempts: 0,
+        };
+        break;
+
+      case "voice":
+        // Delete voice sample from Azure Storage
+        if (kyc.biometricData?.voiceData?.audioUrl) {
+          const voiceBlobName = kyc.biometricData.voiceData.audioUrl
+            .split("/")
+            .pop();
+          await deleteFromBlobStorage(CONTAINERS.VOICE, voiceBlobName);
+        }
+
+        // Reset voice data in database
+        kyc.biometricData.voiceData = null;
+        kyc.completedSteps.voiceVerification = {
+          completed: false,
+          completedAt: null,
+          attempts: 0,
+        };
+        break;
+
+      default:
+        return res.status(400).json({
+          success: false,
+          message: "Invalid step specified",
+        });
+    }
+
+    // Update current step if needed
+    if (kyc.currentStep === step) {
+      // Find the next incomplete step
+      const steps = ["document", "face", "video", "voice"];
+      const currentIndex = steps.indexOf(step);
+      const nextStep = steps
+        .slice(currentIndex + 1)
+        .find((s) => !kyc.completedSteps[`${s}Verification`]?.completed);
+      kyc.currentStep = nextStep || step;
+    }
+
+    // Reset user verification status if needed
+    if (
+      !kyc.completedSteps.documentVerification?.completed ||
+      !kyc.completedSteps.faceVerification?.completed ||
+      !kyc.completedSteps.videoVerification?.completed ||
+      !kyc.completedSteps.voiceVerification?.completed
+    ) {
+      await User.findByIdAndUpdate(userId, {
+        isVerified: false,
+        verificationStatus: "pending",
       });
     }
-
-    // Reset specified step
-    kyc.completedSteps[step].completed = false;
-
-    // Remove related data
-    if (step === "faceVerification") {
-      if (kyc.biometricData.faceData?.imageUrl) {
-        await deleteFile(kyc.biometricData.faceData.imageUrl);
-        kyc.biometricData.faceData = {};
-      }
-      kyc.livenessCheck = {
-        status: "pending",
-        score: 0,
-      };
-    } else if (step === "documentVerification") {
-      if (kyc.documents && kyc.documents.length > 0) {
-        // Delete document images
-        if (kyc.documents[0].frontImageUrl) {
-          await deleteFile(kyc.documents[0].frontImageUrl);
-        }
-        if (kyc.documents[0].backImageUrl) {
-          await deleteFile(kyc.documents[0].backImageUrl);
-        }
-        // Reset OCR data but keep document type
-        const docType = kyc.documents[0].type;
-        kyc.documents = [
-          {
-            type: docType,
-            verificationStatus: "pending",
-          },
-        ];
-      }
-    } else if (step === "videoVerification") {
-      if (kyc.biometricData.videoData?.videoUrl) {
-        await deleteFile(kyc.biometricData.videoData.videoUrl);
-        kyc.biometricData.videoData = {};
-      }
-    } else if (step === "voiceVerification") {
-      if (kyc.biometricData.voiceData?.audioUrl) {
-        await deleteFile(kyc.biometricData.voiceData.audioUrl);
-        kyc.biometricData.voiceData = {};
-      }
-    }
-
-    // Set status back to pending if it was rejected
-    if (kyc.status === "rejected") {
-      kyc.status = "pending";
-    }
-
-    // Add to verification history
-    kyc.verificationHistory.push({
-      action: "reset-step",
-      status: "pending",
-      notes: `Step ${step} reset for retry`,
-      performedBy: req.user.id,
-    });
 
     await kyc.save();
-
-    // Update KYC state in cookie
-    res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
 
     res.json({
       success: true,
       data: {
-        completedSteps: kyc.completedSteps,
         status: kyc.status,
+        currentStep: kyc.currentStep,
+        completedSteps: kyc.completedSteps,
       },
     });
   } catch (error) {
-    console.error("KYC step reset error:", error);
+    console.error("Reset KYC step error:", error);
     res.status(500).json({
       success: false,
       message: "Error resetting KYC step",
+      error: error.message,
     });
   }
 };
@@ -1043,28 +1076,20 @@ export const uploadVoiceSample = async (req, res) => {
       });
     }
 
-    // Generate secure filename
+    // Generate a unique blob name
     const fileExtension = path.extname(voiceFile.originalname);
-    const secureFilename = `${crypto
-      .randomBytes(16)
-      .toString("hex")}${fileExtension}`;
+    const blobName = `${req.user.id}-voice-${Date.now()}${fileExtension}`;
 
-    // Create secure storage path
-    const storageDir = path.join(
-      process.cwd(),
-      "storage",
-      "biometric",
-      "voice"
+    // Upload the file to Azure Blob Storage
+    const blobUrl = await uploadToBlobStorage(
+      voiceFile.buffer,
+      CONTAINERS.VOICE,
+      blobName
     );
-    await fs.promises.mkdir(storageDir, { recursive: true });
-
-    // Move file to secure location
-    const securePath = path.join(storageDir, secureFilename);
-    await fs.promises.rename(voiceFile.path, securePath);
 
     // Update voice data
     kyc.biometricData.voiceData = {
-      audioUrl: securePath,
+      audioUrl: blobUrl,
       verificationStatus: "pending",
       uploadedAt: new Date(),
       fileType: voiceFile.mimetype,
@@ -1170,38 +1195,43 @@ export const verifyVoiceSample = async (req, res) => {
 // @route   POST /api/kyc/speech
 // @access  Private
 export const processSpeechRecognition = async (req, res) => {
+  let audioFile = null;
+  let outputPath = null;
+  let inputPath = null;
+
   try {
-    const audioFile = req.file;
+    audioFile = req.file;
     const { expectedText } = req.body;
 
     if (!audioFile || !expectedText) {
-      if (audioFile) await deleteFile(audioFile.path);
       return res.status(400).json({
         success: false,
         message: "Missing audio file or expected text",
       });
     }
 
-    // Validate file type
-    const allowedTypes = [
-      "audio/wav",
-      "audio/mpeg",
-      "audio/mp4",
-      "audio/webm",
-      "application/octet-stream",
-    ];
-    if (!allowedTypes.includes(audioFile.mimetype)) {
-      await deleteFile(audioFile.path);
+    // Log the file object for debugging
+    console.log("Uploaded file:", {
+      fieldname: audioFile.fieldname,
+      originalname: audioFile.originalname,
+      encoding: audioFile.encoding,
+      mimetype: audioFile.mimetype,
+      buffer: audioFile.buffer ? "Buffer present" : "No buffer",
+      size: audioFile.size,
+      path: audioFile.path,
+    });
+
+    // Validate file type - only allow WAV for consistency
+    if (audioFile.mimetype !== "audio/wav") {
       return res.status(400).json({
         success: false,
-        message: "Invalid file type. Allowed types: WAV, MP3, M4A, WebM",
+        message: "Only WAV audio files are allowed",
       });
     }
 
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024;
     if (audioFile.size > maxSize) {
-      await deleteFile(audioFile.path);
       return res.status(400).json({
         success: false,
         message: "File too large. Maximum size: 10MB",
@@ -1211,22 +1241,37 @@ export const processSpeechRecognition = async (req, res) => {
     // Find existing KYC application
     const kyc = await KYC.findOne({ userId: req.user.id });
     if (!kyc) {
-      await deleteFile(audioFile.path);
       return res.status(404).json({
         success: false,
         message: "KYC application not found",
       });
     }
 
-    // Create a unique output path for the WAV file
-    const outputDir = path.join(process.cwd(), "uploads", "temp");
-    await fs.promises.mkdir(outputDir, { recursive: true });
-    const outputPath = path.join(outputDir, `converted-${Date.now()}.wav`);
+    // Create temp directory if it doesn't exist
+    const tempDir = path.join(process.cwd(), "uploads", "temp");
+    await fs.promises.mkdir(tempDir, { recursive: true });
 
-    // Convert audio to WAV format with specific parameters
+    // Generate unique filenames
+    const timestamp = Date.now();
+    inputPath = path.join(tempDir, `input-${timestamp}.wav`);
+    outputPath = path.join(tempDir, `output-${timestamp}.wav`);
+
+    // Write the buffer to a temporary file
+    try {
+      await fs.promises.writeFile(inputPath, audioFile.buffer);
+      console.log("Successfully wrote input file to:", inputPath);
+    } catch (error) {
+      console.error("Error writing input file:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Error processing audio file",
+      });
+    }
+
+    // Convert audio to WAV format with specific parameters for Azure Speech
     try {
       await new Promise((resolve, reject) => {
-        ffmpeg(audioFile.path)
+        const ffmpegCommand = ffmpeg(inputPath)
           .setFfmpegPath(ffmpegStatic)
           .audioChannels(1) // Mono audio
           .audioFrequency(16000) // 16kHz sample rate
@@ -1237,14 +1282,25 @@ export const processSpeechRecognition = async (req, res) => {
             "-ar 16000", // 16kHz sample rate
             "-ac 1", // Mono
             "-f wav", // Force WAV format
-          ])
-          .on("end", () => {
-            resolve();
-          })
-          .on("error", (err) => {
-            reject(err);
-          })
-          .save(outputPath);
+          ]);
+
+        // Add detailed error logging
+        ffmpegCommand.on("start", (commandLine) => {
+          console.log("FFmpeg command:", commandLine);
+        });
+
+        ffmpegCommand.on("error", (err, stdout, stderr) => {
+          console.error("FFmpeg error:", err);
+          console.error("FFmpeg stderr:", stderr);
+          reject(err);
+        });
+
+        ffmpegCommand.on("end", () => {
+          console.log("FFmpeg conversion completed");
+          resolve();
+        });
+
+        ffmpegCommand.save(outputPath);
       });
 
       // Verify the WAV file exists and has content
@@ -1252,15 +1308,28 @@ export const processSpeechRecognition = async (req, res) => {
       if (stats.size === 0) {
         throw new Error("Generated WAV file is empty");
       }
+      console.log("Output WAV file size:", stats.size);
     } catch (error) {
       console.error("Error converting audio:", error);
-      await deleteFile(audioFile.path);
-      if (fs.existsSync(outputPath)) {
+      // Clean up files
+      if (inputPath && fs.existsSync(inputPath)) {
+        await deleteFile(inputPath);
+      }
+      if (outputPath && fs.existsSync(outputPath)) {
         await deleteFile(outputPath);
       }
       return res.status(500).json({
         success: false,
-        message: "Error converting audio format",
+        message: "Error converting audio format. Please ensure the audio file is valid.",
+      });
+    }
+
+    // Check Azure Speech configuration
+    if (!AZURE_SPEECH_KEY || !AZURE_SPEECH_REGION) {
+      console.error("Azure Speech configuration missing");
+      return res.status(500).json({
+        success: false,
+        message: "Azure Speech configuration is missing",
       });
     }
 
@@ -1273,6 +1342,7 @@ export const processSpeechRecognition = async (req, res) => {
 
     // Read the WAV file into a buffer
     const wavBuffer = await fs.promises.readFile(outputPath);
+    console.log("Read WAV file into buffer, size:", wavBuffer.length);
 
     // Create audio config from buffer
     const audioConfig = sdk.AudioConfig.fromWavFileInput(wavBuffer);
@@ -1281,111 +1351,181 @@ export const processSpeechRecognition = async (req, res) => {
     const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
 
     // Process speech recognition
+    console.log("Starting speech recognition...");
     const result = await new Promise((resolve, reject) => {
       recognizer.recognizeOnceAsync(
         (result) => {
+          console.log("Speech recognition result:", result);
           resolve(result);
         },
         (error) => {
+          console.error("Speech recognition error:", error);
           reject(error);
         }
       );
     });
 
-    // Clean up the audio files
-    await deleteFile(audioFile.path);
+    // Get recognized text and normalize it (remove punctuation and extra spaces)
+    const normalizeText = (text) => {
+      return text
+        .toLowerCase()
+        .replace(/[.,!?]/g, '') // Remove punctuation
+        .replace(/\s+/g, ' ')   // Replace multiple spaces with single space
+        .trim();                // Remove leading/trailing spaces
+    };
 
-    // Get recognized text
-    const recognizedText = result.text.trim().toLowerCase();
-    const expectedTextLower = expectedText.trim().toLowerCase();
+    const recognizedText = normalizeText(result.text);
+    const expectedTextLower = normalizeText(expectedText);
+    console.log("Recognized text (normalized):", recognizedText);
+    console.log("Expected text (normalized):", expectedTextLower);
 
     // Calculate similarity score (simple exact match for now)
     const isMatch = recognizedText === expectedTextLower;
     const confidence = result.confidence || 0;
+    console.log("Match result:", { isMatch, confidence });
 
     // Check if this is the first voice recording
     const isFirstRecording = !kyc.biometricData.voiceData?.audioUrl;
+    console.log("Is first recording:", isFirstRecording);
 
     // Update KYC with speech recognition results
     if (!kyc.biometricData.voiceData) {
       kyc.biometricData.voiceData = {};
     }
 
-    kyc.biometricData.voiceData = {
-      ...kyc.biometricData.voiceData,
-      // verificationStatus: isFirstRecording ? "pending" : (isMatch ? "verified" : "rejected"),
-      verificationStatus: "verified",
-      confidence: confidence,
-      recognizedText: recognizedText,
-      expectedText: expectedText,
-      processedAt: new Date(),
-    };
-
-    // For first recording, save it as a template
-    if (isFirstRecording) {
+    // Only proceed with updates if there's a match
+    if (isMatch) {
       try {
-        // Generate secure filename with .wav extension
-        const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
+        // Generate unique blob name
+        const blobName = `${kyc._id}-${Date.now()}.wav`;
+        console.log("Uploading to Azure Blob Storage:", blobName);
 
-        // Create secure storage path
-        const storageDir = path.join(
-          process.cwd(),
-          "storage",
-          "biometric",
-          "voice"
+        // Upload to Azure Blob Storage
+        const blobUrl = await uploadToBlobStorage(
+          wavBuffer,
+          CONTAINERS.VOICE,
+          blobName,
+          "audio/wav"
         );
-        await fs.promises.mkdir(storageDir, { recursive: true });
+        console.log("Uploaded to Azure Blob Storage:", blobUrl);
 
-        // Move file to secure location
-        const securePath = path.join(storageDir, secureFilename);
+        // Update voice data with successful match
+        kyc.biometricData.voiceData = {
+          ...kyc.biometricData.voiceData,
+          audioUrl: blobUrl,
+          verificationStatus: "verified",
+          confidence: confidence,
+          recognizedText: recognizedText,
+          expectedText: expectedText,
+          processedAt: new Date(),
+          fileType: "audio/wav",
+          fileSize: wavBuffer.length,
+          uploadedAt: new Date()
+        };
 
-        // Copy the converted WAV file instead of renaming
-        await fs.promises.copyFile(outputPath, securePath);
+        // Update voice verification step only if this is a verification attempt
+        if (!isFirstRecording) {
+          kyc.completedSteps.voiceVerification = {
+            completed: true,
+            completedAt: new Date(),
+            attempts: (kyc.completedSteps.voiceVerification?.attempts || 0) + 1,
+          };
 
-        await deleteFile(outputPath);
+          // Check if all steps are completed
+          const allStepsCompleted = 
+            kyc.completedSteps.faceVerification?.completed &&
+            kyc.completedSteps.documentVerification?.completed &&
+            kyc.completedSteps.videoVerification?.completed &&
+            kyc.completedSteps.voiceVerification?.completed;
 
-        kyc.biometricData.voiceData.audioUrl = securePath;
-        kyc.biometricData.voiceData.fileType = "audio/wav"; // Always store as WAV
-        kyc.biometricData.voiceData.fileSize = (
-          await fs.promises.stat(securePath)
-        ).size;
-        kyc.biometricData.voiceData.uploadedAt = new Date();
+          if (allStepsCompleted) {
+            // Update KYC status
+            kyc.status = "approved";
+            kyc.verificationHistory.push({
+              action: "auto_approval",
+              status: "approved",
+              notes: "All verification steps completed successfully",
+              timestamp: new Date(),
+            });
+
+            // Update user's verification status
+            await User.findByIdAndUpdate(req.user.id, {
+              isVerified: true,
+              verificationStatus: "approved",
+            });
+          }
+        }
+
+        // Add to verification history
+        kyc.verificationHistory.push({
+          action: isFirstRecording ? "voice_template_creation" : "speech_recognition",
+          status: "success",
+          notes: isFirstRecording
+            ? "Initial voice template created successfully"
+            : `Speech recognition successful. Confidence: ${confidence}`,
+          timestamp: new Date(),
+        });
+
+        // Save KYC updates
+        try {
+          await kyc.save();
+          console.log("KYC updated successfully");
+        } catch (error) {
+          console.error("Error saving KYC:", error);
+          return res.status(500).json({
+            success: false,
+            message: "Error updating KYC record",
+          });
+        }
       } catch (error) {
         console.error("Error saving voice template:", error);
-        // Clean up files
-        await deleteFile(audioFile.path);
-        await deleteFile(outputPath);
         return res.status(500).json({
           success: false,
           message: "Error saving voice template",
         });
       }
-    }
-
-    // Update voice verification step only if this is a verification attempt (not first recording)
-    if (!isFirstRecording && isMatch) {
-      kyc.completedSteps.voiceVerification = {
-        completed: true,
-        completedAt: new Date(),
-        attempts: (kyc.completedSteps.voiceVerification?.attempts || 0) + 1,
+    } else {
+      // For failed matches, only update the verification status and increment attempts
+      kyc.biometricData.voiceData = {
+        ...kyc.biometricData.voiceData,
+        verificationStatus: "rejected",
+        confidence: confidence,
+        recognizedText: recognizedText,
+        expectedText: expectedText,
+        processedAt: new Date()
       };
+
+      // Increment attempts counter
+      if (!kyc.completedSteps.voiceVerification) {
+        kyc.completedSteps.voiceVerification = {
+          completed: false,
+          attempts: 1
+        };
+      } else {
+        kyc.completedSteps.voiceVerification.attempts = 
+          (kyc.completedSteps.voiceVerification.attempts || 0) + 1;
+      }
+
+      // Add failed attempt to verification history
+      kyc.verificationHistory.push({
+        action: "speech_recognition",
+        status: "failed",
+        notes: `Speech recognition failed. Expected: "${expectedText}", Got: "${recognizedText}". Confidence: ${confidence}`,
+        timestamp: new Date(),
+      });
+
+      // Save the failed attempt
+      try {
+        await kyc.save();
+        console.log("KYC updated with failed attempt");
+      } catch (error) {
+        console.error("Error saving KYC:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Error updating KYC record",
+        });
+      }
     }
-
-    // Add to verification history
-    kyc.verificationHistory.push({
-      action: isFirstRecording
-        ? "voice_template_creation"
-        : "speech_recognition",
-      status: isFirstRecording ? "success" : isMatch ? "success" : "failed",
-      notes: isFirstRecording
-        ? "Initial voice template created successfully"
-        : `Speech recognition ${
-            isMatch ? "successful" : "failed"
-          }. Confidence: ${confidence}`,
-      timestamp: new Date(),
-    });
-
-    await kyc.save();
 
     // Update KYC state in cookie
     res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
@@ -1397,8 +1537,12 @@ export const processSpeechRecognition = async (req, res) => {
 
     // Clean up the temporary files after everything is done
     try {
-      await deleteFile(audioFile.path);
-      await deleteFile(outputPath);
+      if (inputPath && fs.existsSync(inputPath)) {
+        await deleteFile(inputPath);
+      }
+      if (outputPath && fs.existsSync(outputPath)) {
+        await deleteFile(outputPath);
+      }
     } catch (error) {
       console.error("Error cleaning up temporary files:", error);
     }
@@ -1418,8 +1562,16 @@ export const processSpeechRecognition = async (req, res) => {
     });
   } catch (error) {
     console.error("Speech recognition error:", error);
-    if (req.file?.path) {
-      await deleteFile(req.file.path);
+    // Clean up files in case of error
+    try {
+      if (inputPath && fs.existsSync(inputPath)) {
+        await deleteFile(inputPath);
+      }
+      if (outputPath && fs.existsSync(outputPath)) {
+        await deleteFile(outputPath);
+      }
+    } catch (cleanupError) {
+      console.error("Error cleaning up files:", cleanupError);
     }
     res.status(500).json({
       success: false,

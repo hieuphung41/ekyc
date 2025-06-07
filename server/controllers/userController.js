@@ -9,7 +9,7 @@ import moment from "moment"; // Import moment for date formatting (if needed, al
 // @access  Public
 export const register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, phoneNumber } = req.body;
+    const { email, password, firstName, lastName, phoneNumber, clientId, clientMetadata } = req.body;
 
     // Check if user exists
     const userExists = await User.findOne({ email });
@@ -20,6 +20,15 @@ export const register = async (req, res) => {
       });
     }
 
+    // Check if client exists
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid client ID",
+      });
+    }
+
     // Create user
     const user = await User.create({
       email,
@@ -27,6 +36,11 @@ export const register = async (req, res) => {
       firstName,
       lastName,
       phoneNumber,
+      registeredBy: clientId,
+      clientMetadata: {
+        ...clientMetadata,
+        registrationDate: new Date(),
+      }
     });
 
     res.status(201).json({

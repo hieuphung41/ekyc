@@ -22,9 +22,9 @@ const IDCardUploadStep = ({ onNext, onError }) => {
   const [backImageQuality, setBackImageQuality] = useState(null);
 
   const documentTypes = [
-    { id: "nationalId", label: "National ID" },
+    { id: "national_id", label: "National ID" },
     { id: "passport", label: "Passport" },
-    { id: "drivingLicense", label: "Driving License" }
+    { id: "driving_license", label: "Driving License" }
   ];
 
   useEffect(() => {
@@ -123,32 +123,24 @@ const IDCardUploadStep = ({ onNext, onError }) => {
 
   const handleUpload = async () => {
     if (!selectedType) {
-      toast.error('Please select a document type');
+      toast.error("Please select a document type");
       return;
     }
 
     if (!frontFile || !backFile) {
-      toast.error('Please upload both sides of the document');
-      return;
-    }
-
-    if (frontImageQuality?.score < 0.3 || backImageQuality?.score < 0.3) {
-      toast.error('Image quality too low. Please retake the photos.');
+      toast.error("Please upload both sides of the document");
       return;
     }
 
     const formData = new FormData();
     formData.append("documentType", selectedType);
-    formData.append("frontImage", frontFile);
-    formData.append("backImage", backFile);
+    formData.append("front", frontFile);
+    formData.append("back", backFile);
 
     try {
-      const result = await dispatch(uploadIDCard(formData));
-      if (!result.error) {
-        toast.success('Document uploaded successfully');
-        onNext();
-      }
+      await dispatch(uploadIDCard(formData)).unwrap();
     } catch (error) {
+      console.error("Upload error:", error);
       toast.error(error.message || "Failed to upload document");
     }
   };

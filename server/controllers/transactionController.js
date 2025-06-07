@@ -12,6 +12,7 @@ import dotenv from "dotenv";
 import KYC from "../models/KYC.js";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
+import { uploadToBlobStorage, deleteFromBlobStorage, CONTAINERS } from "../utils/azureStorage.js";
 
 dotenv.config();
 
@@ -147,48 +148,31 @@ export const verifyTransactionFace = async (req, res) => {
       });
     }
 
-    // Create secure storage path for uploaded file
-    const storageDir = path.join(process.cwd(), "storage", "transactions", "face");
-    await fs.promises.mkdir(storageDir, { recursive: true });
-    
-    // Generate secure filename for uploaded file
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}.jpg`;
-    const securePath = path.join(storageDir, secureFilename);
-
     try {
-      // Move uploaded file to secure location
-      await fs.promises.rename(file.path, securePath);
-
-      // Verify both files exist after moving
-      if (!fs.existsSync(securePath)) {
-        return res.status(400).json({
-          success: false,
-          message: "Failed to save uploaded face image",
-        });
-      }
-
-      if (!fs.existsSync(kyc.biometricData.faceData.imageUrl)) {
-        await deleteFile(securePath);
-        return res.status(400).json({
-          success: false,
-          message: "KYC face image not found",
-        });
-      }
+      // Generate a unique blob name
+      const blobName = `${transaction.transactionId}-${Date.now()}.jpg`;
+      
+      // Upload the file to Azure Blob Storage
+      const blobUrl = await uploadToBlobStorage(
+        file.buffer,
+        CONTAINERS.FACE,
+        blobName,
+        file.mimetype
+      );
 
       // Create form data for FPT AI face matching API
       const formData = new FormData();
       
-      // Get just the filenames from the paths
-      const uploadedFilename = path.basename(securePath);
-      const kycFilename = path.basename(kyc.biometricData.faceData.imageUrl);
-
-      // Create file streams from the saved files
-      const uploadedFileStream = fs.createReadStream(securePath);
-      const kycFileStream = fs.createReadStream(kyc.biometricData.faceData.imageUrl);
-
-      // Add files to form data with just filenames
-      formData.append("file[]", uploadedFileStream, uploadedFilename);
-      formData.append("file[]", kycFileStream, kycFilename);
+      // Get the KYC face image from Azure Blob Storage
+      const kycBlobName = path.basename(kyc.biometricData.faceData.imageUrl);
+      const kycBlobUrl = await generateSasToken(CONTAINERS.FACE, kycBlobName);
+      
+      // Add files to form data
+      formData.append("file[]", file.buffer, {
+        filename: blobName,
+        contentType: file.mimetype,
+      });
+      formData.append("file[]", kycBlobUrl, kycBlobName);
 
       // Call FPT AI face matching API
       const fptResponse = await axios.post(
@@ -204,7 +188,7 @@ export const verifyTransactionFace = async (req, res) => {
 
       // Handle different FPT AI response codes
       if (fptResponse.data.code === "407") {
-        await deleteFile(securePath);
+        await deleteFromBlobStorage(CONTAINERS.FACE, blobName);
         return res.status(400).json({
           success: false,
           message: "No faces detected in one or both images",
@@ -212,7 +196,7 @@ export const verifyTransactionFace = async (req, res) => {
       }
 
       if (fptResponse.data.code === "408") {
-        await deleteFile(securePath);
+        await deleteFromBlobStorage(CONTAINERS.FACE, blobName);
         return res.status(400).json({
           success: false,
           message: "Invalid image format. Only JPG and JPEG are allowed",
@@ -220,7 +204,7 @@ export const verifyTransactionFace = async (req, res) => {
       }
 
       if (fptResponse.data.code === "409") {
-        await deleteFile(securePath);
+        await deleteFromBlobStorage(CONTAINERS.FACE, blobName);
         return res.status(400).json({
           success: false,
           message: "Please upload exactly 2 images for face check",
@@ -234,13 +218,13 @@ export const verifyTransactionFace = async (req, res) => {
         // Update transaction with verification data
         await transaction.verify("face", {
           faceConfidence: verificationResult.similarity || 0,
-          faceImageUrl: securePath,
+          faceImageUrl: blobUrl,
           confidence: verificationResult.similarity || 0,
           verified: isMatch
         });
 
         if (!isMatch) {
-          await deleteFile(securePath);
+          await deleteFromBlobStorage(CONTAINERS.FACE, blobName);
           return res.status(400).json({
             success: false,
             message: "Face verification failed - faces do not match",
@@ -270,7 +254,7 @@ export const verifyTransactionFace = async (req, res) => {
           },
         });
       } else {
-        await deleteFile(securePath);
+        await deleteFromBlobStorage(CONTAINERS.FACE, blobName);
         return res.status(400).json({
           success: false,
           message: "Face verification failed - unexpected response from FPT AI",
@@ -279,9 +263,6 @@ export const verifyTransactionFace = async (req, res) => {
       }
     } catch (error) {
       console.error("Face verification error:", error);
-      if (fs.existsSync(securePath)) {
-        await deleteFile(securePath);
-      }
       res.status(500).json({
         success: false,
         message: "Error verifying transaction with face",
@@ -289,9 +270,6 @@ export const verifyTransactionFace = async (req, res) => {
     }
   } catch (error) {
     console.error("Face verification error:", error);
-    if (req.file?.path) {
-      await deleteFile(req.file.path);
-    }
     res.status(500).json({
       success: false,
       message: "Error verifying transaction with face",
@@ -432,25 +410,20 @@ export const verifyTransactionVoice = async (req, res) => {
     const isMatch = normalizedRecognizedText === normalizedExpectedText;
     const confidence = result.confidence || 0;
 
-    // Generate secure filename
-    const secureFilename = `${crypto.randomBytes(16).toString("hex")}.wav`;
-
-    // Create secure storage path
-    const storageDir = path.join(
-      process.cwd(),
-      "storage",
-      "transactions",
-      "voice"
+    // Generate a unique blob name
+    const blobName = `${transaction.transactionId}-${Date.now()}.wav`;
+    
+    // Upload the file to Azure Blob Storage
+    const blobUrl = await uploadToBlobStorage(
+      wavBuffer,
+      CONTAINERS.VOICE,
+      blobName,
+      "audio/wav"
     );
-    await fs.promises.mkdir(storageDir, { recursive: true });
-
-    // Move file to secure location
-    const securePath = path.join(storageDir, secureFilename);
-    await fs.promises.rename(outputPath, securePath);
 
     // Update transaction with verification data
     await transaction.verify("voice", {
-      voiceSampleUrl: securePath,
+      voiceSampleUrl: blobUrl,
       recognizedText: recognizedText,
       expectedText: text,
       confidence: confidence,
@@ -458,6 +431,7 @@ export const verifyTransactionVoice = async (req, res) => {
     });
 
     if (!isMatch) {
+      await deleteFromBlobStorage(CONTAINERS.VOICE, blobName);
       return res.status(400).json({
         success: false,
         message: "Voice verification failed - text does not match",

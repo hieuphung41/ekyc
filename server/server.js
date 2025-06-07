@@ -9,6 +9,7 @@ import kycRoutes from './routes/kycRoutes.js';
 import apiClientRoutes from './routes/apiClientRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import cookieParser from 'cookie-parser';
+import { initializeContainers } from './utils/azureStorage.js';
 
 dotenv.config();
 
@@ -24,6 +25,11 @@ app.use(cors({
 }));
 app.use(helmet());
 app.use(morgan('dev'));
+
+// Initialize Azure Storage containers
+initializeContainers()
+  .then(() => console.log('Azure Storage containers initialized successfully'))
+  .catch((err) => console.error('Azure Storage containers initialization error:', err));
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ekyc-platform')
