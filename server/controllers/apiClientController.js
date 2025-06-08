@@ -147,13 +147,11 @@ export const loginRepresentative = async (req, res) => {
       });
     }
 
-    // Generate token with payload matching jwt.js generateToken expectation
+    // Generate token with correct payload structure
     const token = generateToken({
-      _id: client._id, // Use _id
-      email: client.representative.email, // Include representative email
-      role: "api-client", // Role
-      // Include other data if needed in the token payload, but keep it minimal
-      // permissions: client.permissions // Could add permissions here if needed client-side
+      _id: client._id,
+      email: client.representative.email,
+      role: client.representative.role
     });
 
     // Set HTTP-only cookie
@@ -169,18 +167,10 @@ export const loginRepresentative = async (req, res) => {
       data: {
         id: client._id,
         name: client.name,
-        clientId: client.clientId,
-        apiKey: client.apiKey,
+        email: client.representative.email,
+        role: client.representative.role,
         permissions: client.permissions,
-        status: client.status,
-        ekycConfig: client.ekycConfig,
-        representative: {
-          email: client.representative.email,
-          firstName: client.representative.firstName,
-          lastName: client.representative.lastName,
-          phoneNumber: client.representative.phoneNumber,
-        },
-        token,
+        token: token,
       },
     });
   } catch (error) {

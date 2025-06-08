@@ -16,7 +16,6 @@ export const protect = async (req, res, next) => {
     }
 
     if (!token) {
-      console.log('No token found in request');
       return res.status(401).json({
         success: false,
         message: "Not authorized to access this route",
@@ -25,33 +24,37 @@ export const protect = async (req, res, next) => {
 
     const decoded = verifyToken(token);
     if (!decoded) {
-      console.log('Token verification failed');
       return res.status(401).json({
         success: false,
         message: "Invalid token",
       });
     }
 
+    // Check if this is an API client token
     if (decoded.role === 'api-client') {
       const apiClient = await APIClient.findById(decoded.id);
       if (!apiClient) {
-        console.log('API client not found:', decoded.id);
         return res.status(401).json({
           success: false,
           message: "API client not found",
         });
       }
+      console.log(apiClient)
+      // Set only the API client
       req.apiClient = apiClient;
+      req.user = null; // Ensure user is not set
     } else {
+      // This is a regular user token
       const user = await User.findById(decoded.id).select("-password");
       if (!user) {
-        console.log('User not found:', decoded.id);
         return res.status(401).json({
           success: false,
           message: "User not found",
         });
       }
+      // Set only the user
       req.user = user;
+      req.apiClient = null; // Ensure apiClient is not set
     }
 
     next();
@@ -136,5 +139,4 @@ export const checkEkycPermission = (requiredPermission) => {
     }
   };
 };
-
 

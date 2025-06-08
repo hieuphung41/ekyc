@@ -90,6 +90,11 @@ const apiClientSchema = new mongoose.Schema({
     phoneNumber: {
       type: String,
       trim: true,
+    },
+    role: {
+      type: String,
+      default: 'api-client',
+      enum: ['api-client']
     }
   },
   apiKeys: [apiKeySchema],

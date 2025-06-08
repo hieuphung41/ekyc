@@ -10,7 +10,7 @@ const AdminSidebar = () => {
   const { loading } = useSelector((state) => state.admin || { loading: false });
 
   const navigation = [
-    { name: "Dashboard", href: "/admin/dashboard", icon: "HomeIcon" },
+    { name: "Dashboard", href: "/admin", icon: "HomeIcon" },
     { name: "Users", href: "/admin/users", icon: "UsersIcon" },
     { name: "API Clients", href: "/admin/clients", icon: "ApiIcon" },
   ];

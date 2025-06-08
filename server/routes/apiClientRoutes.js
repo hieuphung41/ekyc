@@ -32,8 +32,6 @@ router.get('/check-auth', protect, checkClientAuthStatus);
 
 // Protected routes (API client representative)
 router.post('/logout', protect, logoutClient);
-router.get('/profile', protect, getClient);
-router.put('/profile', protect, updateClient);
 
 // User Management Routes (Protected)
 router.get('/users', protect, getClientUsers);
