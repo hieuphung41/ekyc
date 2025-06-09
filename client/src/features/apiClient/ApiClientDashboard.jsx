@@ -110,6 +110,39 @@ const ApiClientDashboard = () => {
     <ApiClientLayout>
       <div className="p-8">
         <h1 className="text-3xl font-bold mb-6 text-gray-800">Dashboard</h1>
+        
+        {/* Client Info and Usage Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">Client Information</h2>
+            <div className="space-y-2">
+              <p className="text-gray-600">
+                <span className="font-semibold">Name:</span> {apiReport?.client?.name}
+              </p>
+              <p className="text-gray-600">
+                <span className="font-semibold">Organization:</span> {apiReport?.client?.organization}
+              </p>
+              <p className="text-gray-600">
+                <span className="font-semibold">Subscription:</span> {apiReport?.client?.subscription}
+              </p>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">Usage Summary</h2>
+            <div className="space-y-2">
+              <p className="text-gray-600">
+                <span className="font-semibold">Total Requests:</span> {apiReport?.usage?.summary?.totalRequests}
+              </p>
+              <p className="text-gray-600">
+                <span className="font-semibold">Storage Used:</span> {apiReport?.usage?.summary?.storageUsed} GB
+              </p>
+              <p className="text-gray-600">
+                <span className="font-semibold">Active Users:</span> {apiReport?.usage?.summary?.activeUsers}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           {/* Traffic Chart */}
           <div>
@@ -178,6 +211,24 @@ const ApiClientDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Top Endpoints */}
+        <div className="bg-white p-6 rounded-lg shadow mb-8">
+          <h3 className="text-xl font-semibold mb-4 text-gray-700">Top Endpoints</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {apiReport?.usage?.endpoints?.map((endpoint, index) => (
+              <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-blue-700 mb-2">{endpoint.endpoint}</h4>
+                <div className="space-y-1 text-sm">
+                  <p>Requests: {endpoint.totalRequests}</p>
+                  <p>Success Rate: {endpoint.successRate.toFixed(1)}%</p>
+                  <p>Avg Response Time: {endpoint.averageResponseTime.toFixed(2)}ms</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* APIs Table */}
         <div className="bg-white p-6 rounded-lg shadow">
           <h3 className="text-xl font-semibold mb-4 text-gray-700">APIs</h3>

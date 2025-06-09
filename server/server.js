@@ -8,6 +8,10 @@ import userRoutes from './routes/userRoutes.js';
 import kycRoutes from './routes/kycRoutes.js';
 import apiClientRoutes from './routes/apiClientRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
+import webhookRoutes from './routes/webhookRoutes.js';
+import apiUsageRoutes from './routes/apiUsageRoutes.js';
+import { rateLimit } from './middlewares/rateLimit.js';
+import { trackApiUsage } from './controllers/apiUsageController.js';
 import cookieParser from 'cookie-parser';
 import { initializeContainers } from './utils/azureStorage.js';
 
@@ -36,11 +40,17 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ekyc-plat
     .then(() => console.log('MongoDB connected successfully'))
     .catch((err) => console.error('MongoDB connection error:', err));
 
-// Routes
+// API routes with rate limiting and usage tracking
 app.use('/api/users', userRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/clients', apiClientRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/usage', apiUsageRoutes);
+
+// Apply rate limiting and usage tracking to all API routes
+app.use('/api', rateLimit);
+app.use('/api', trackApiUsage);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

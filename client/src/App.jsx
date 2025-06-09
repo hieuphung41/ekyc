@@ -29,6 +29,8 @@ import ApiClientApis from "./features/apiClient/ApiClientApis";
 import ApiClientApiKeys from "./features/apiClient/ApiClientApiKeys";
 import ApiClientApiReport from "./features/apiClient/ApiClientApiReport";
 import ApiClientUsers from "./features/apiClient/ApiClientUsers";
+import ApiClientWebhooks from "./features/apiClient/ApiClientWebhooks"
+import ApiClientUsage from "./features/apiClient/ApiClientUsage"
 import AdminDashboard from "./features/admin/AdminDashboard";
 import AdminUsers from "./features/admin/AdminUsers";
 import AdminUserEdit from "./features/admin/AdminUserEdit";
@@ -214,6 +216,22 @@ const AppContent = () => {
             element={
               <ClientRoute>
                 <ApiClientUsers />
+              </ClientRoute>
+            }
+          />
+          <Route
+            path="/api-client/webhooks"
+            element={
+              <ClientRoute>
+                <ApiClientWebhooks />
+              </ClientRoute>
+            }
+          />
+          <Route
+            path="/api-client/usage"
+            element={
+              <ClientRoute>
+                <ApiClientUsage />
               </ClientRoute>
             }
           />

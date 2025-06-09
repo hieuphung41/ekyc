@@ -9,7 +9,6 @@ export const registerClient = createAsyncThunk(
   async (clientData, { rejectWithValue }) => {
     try {
       const response = await axiosInstance.post('/clients/register', clientData);
-      // Assuming the response on successful registration might include client details or a success message
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || { message: 'API client registration failed' });
@@ -22,17 +21,9 @@ export const loginRepresentative = createAsyncThunk(
   'apiClient/login',
   async (credentials, { rejectWithValue }) => {
     try {
-      // Use the new login endpoint for representatives
       const response = await axiosInstance.post('/clients/login', credentials, {
-        withCredentials: true // Send cookies
+        withCredentials: true
       });
-
-      // Assuming the response includes the token and client details
-      const token = response.data.data.token;
-
-      // Store token (e.g., in localStorage or Redux state if not using cookies only)
-      // For now, we'll just return the data received, assuming cookie handles persistence
-
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || { message: 'API client login failed' });
@@ -45,23 +36,17 @@ export const checkClientAuth = createAsyncThunk(
   'apiClient/checkAuth',
   async (_, { rejectWithValue }) => {
     try {
-      // Assuming a backend endpoint exists to check API client auth status
-      // This endpoint should read the auth_token_apiclient cookie
-      const response = await axiosInstance.get('/clients/check-auth', { // Placeholder endpoint
-         withCredentials: true // Send cookies
+      const response = await axiosInstance.get('/clients/check-auth', {
+        withCredentials: true
       });
       
-      // Assuming backend returns client data if authenticated
       if (response.data.success) {
-          return response.data.data;
+        return response.data.data;
       } else {
-          // If success is false, consider it not authenticated
-          return rejectWithValue({ message: 'Not authenticated as API client' });
+        return rejectWithValue({ message: 'Not authenticated as API client' });
       }
-
     } catch (error) {
-       // If request fails (e.g., 401), consider it not authenticated
-       return rejectWithValue(error.response?.data || { message: 'API client authentication check failed' });
+      return rejectWithValue(error.response?.data || { message: 'API client authentication check failed' });
     }
   }
 );

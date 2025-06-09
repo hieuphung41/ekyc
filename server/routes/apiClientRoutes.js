@@ -16,6 +16,13 @@ import {
     getEndpointReport,
     getClientUsers,
     updateUserStatus,
+    getClientInfo,
+    updateClientInfo,
+    updateSubscription,
+    getSubscriptionStatus,
+    updateClientSettings,
+    getClientUsage,
+    updateBillingSettings,
 } from '../controllers/apiClientController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
@@ -46,6 +53,24 @@ router.post('/api-keys/regenerate', protect, regenerateApiKey);
 // API Report Routes (Protected)
 router.get('/api-report', protect, getApiReport);
 router.get('/api-report/:endpoint', protect, getEndpointReport);
+
+// Client management
+router.get('/profile', protect, getClientInfo);
+router.put('/profile', protect, updateClientInfo);
+
+// Settings management
+router.get('/settings', protect, getClientInfo);
+router.put('/settings', protect, updateClientSettings);
+
+// Usage and statistics
+router.get('/usage', protect, getClientUsage);
+
+// Subscription management
+router.get('/subscription', protect, getSubscriptionStatus);
+router.put('/subscription', protect, authorize('admin'), updateSubscription);
+
+// Billing management
+router.put('/billing', protect, updateBillingSettings);
 
 // Admin only routes
 router.get('/:id', protect, authorize('admin'), getClient);

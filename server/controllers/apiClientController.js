@@ -1,7 +1,11 @@
 import APIClient from "../models/APIClient.js";
+import Webhook from "../models/Webhook.js";
 import { generateToken } from "../utils/jwt.js";
 import crypto from "crypto";
 import User from "../models/User.js";
+import ApiUsage from "../models/ApiUsage.js";
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 // @desc    Register new API client with representative
 // @route   POST /api/clients/register
@@ -15,9 +19,9 @@ export const registerClient = async (req, res) => {
       permissions,
       ipWhitelist,
       rateLimits,
-      webhookUrl,
       ekycConfig,
       representative,
+      subscription
     } = req.body;
 
     // Check if representative email already exists
@@ -78,9 +82,18 @@ export const registerClient = async (req, res) => {
       permissions,
       ipWhitelist,
       rateLimits,
-      webhookUrl,
       ekycConfig,
       representative,
+      subscription: subscription || {
+        tier: 'free',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        features: {
+          maxWebhooks: 1,
+          maxApiKeys: 2,
+          maxUsers: 1
+        }
+      }
     });
 
     res.status(201).json({
@@ -94,6 +107,7 @@ export const registerClient = async (req, res) => {
         permissions: client.permissions,
         status: client.status,
         ekycConfig: client.ekycConfig,
+        subscription: client.subscription,
         representative: {
           email: client.representative.email,
           firstName: client.representative.firstName,
@@ -111,7 +125,7 @@ export const registerClient = async (req, res) => {
   }
 };
 
-// @desc    Login API client representative
+// @desc    Login API client
 // @route   POST /api/clients/login
 // @access  Public
 export const loginRepresentative = async (req, res) => {
@@ -119,39 +133,38 @@ export const loginRepresentative = async (req, res) => {
     const { email, password } = req.body;
 
     // Find client by representative email
-    const client = await APIClient.findOne({ "representative.email": email });
+    const client = await APIClient.findOne({ 'representative.email': email });
     if (!client) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials",
+        message: "Invalid credentials"
+      });
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, client.representative.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials"
       });
     }
 
     // Check if client is active
-    if (client.status !== "active") {
+    if (client.status !== 'active') {
       return res.status(403).json({
         success: false,
-        message: "API client is not active",
-      });
-    }
-
-    // Validate representative credentials
-    const isValid = await client.validateRepresentativeCredentials(
-      email,
-      password
-    );
-    if (!isValid) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
+        message: "Account is not active"
       });
     }
 
     // Generate token with correct payload structure
     const token = generateToken({
-      _id: client._id,
+      id: client._id,
       email: client.representative.email,
-      role: client.representative.role
+      role: 'api-client',
+      clientId: client.clientId,
+      permissions: client.permissions
     });
 
     // Set HTTP-only cookie
@@ -159,25 +172,33 @@ export const loginRepresentative = async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === "development",
       sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
+
+    // Update last login
+    client.lastLogin = new Date();
+    await client.save();
 
     res.json({
       success: true,
       data: {
-        id: client._id,
-        name: client.name,
-        email: client.representative.email,
-        role: client.representative.role,
-        permissions: client.permissions,
-        token: token,
-      },
+        token,
+        client: {
+          id: client._id,
+          name: client.name,
+          organization: client.organization,
+          permissions: client.permissions,
+          status: client.status,
+          subscription: client.subscription,
+          settings: client.settings
+        }
+      }
     });
   } catch (error) {
-    console.error("API client login error:", error);
+    console.error("Login error:", error);
     res.status(500).json({
       success: false,
-      message: "Error in API client login",
+      message: "Error during login"
     });
   }
 };
@@ -205,8 +226,9 @@ export const authenticateClient = async (req, res) => {
     }
 
     const token = generateToken({
-      _id: client._id,
+      id: client._id,
       role: "api-client",
+      clientId: client.clientId,
       permissions: client.permissions,
     });
 
@@ -344,32 +366,47 @@ export const getApiKeys = async (req, res) => {
 // @access  Private
 export const generateApiKey = async (req, res) => {
   try {
-    const client = await APIClient.findById(req.apiClient._id);
+    const clientId = req.user.clientId;
+    const client = await APIClient.findById(clientId);
+
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found",
+        message: "API client not found"
       });
     }
 
-    const newApiKey = client.generateNewApiKey();
+    // Check subscription status
+    if (!client.isSubscriptionActive()) {
+      return res.status(403).json({
+        success: false,
+        message: "Subscription has expired"
+      });
+    }
+
+    // Check API key limit
+    if (client.apiKeys.length >= client.subscription.features.maxApiKeys) {
+      return res.status(403).json({
+        success: false,
+        message: "Maximum number of API keys reached for this subscription tier"
+      });
+    }
+
+    const apiKey = client.generateNewApiKey();
     await client.save();
 
     res.json({
       success: true,
       data: {
-        id: newApiKey._id,
-        key: newApiKey.key,
-        status: newApiKey.status,
-        createdAt: newApiKey.createdAt,
-        expiresAt: newApiKey.expiresAt
-      },
+        apiKey: apiKey.key,
+        expiresAt: apiKey.expiresAt
+      }
     });
   } catch (error) {
-    console.error("Generate API key error:", error);
+    console.error("API key generation error:", error);
     res.status(500).json({
       success: false,
-      message: "Error generating new API key",
+      message: "Error generating API key"
     });
   }
 };
@@ -502,21 +539,48 @@ export const getAllClients = async (req, res) => {
   }
 };
 
-// New function to check API client authentication status
+// @desc    Check API client authentication status
+// @route   GET /api/clients/check-auth
+// @access  Private
 export const checkClientAuthStatus = async (req, res) => {
   try {
+    console.log('Checking auth status:', {
+      hasApiClient: !!req.apiClient,
+      clientId: req.apiClient?.clientId,
+      status: req.apiClient?.status
+    });
+
     // If we reach this point, the protect middleware has already authenticated the API client
     // The authenticated client object is available in req.apiClient
     if (!req.apiClient) {
+      console.log('No API client found in request');
       return res.status(401).json({
         success: false,
-        message: "Not authorized",
+        message: "Not authorized: No API client found",
+      });
+    }
+
+    // Verify the client is active
+    if (req.apiClient.status !== 'active') {
+      console.log('API client is not active:', req.apiClient.status);
+      return res.status(403).json({
+        success: false,
+        message: "API client account is not active",
       });
     }
 
     res.json({
       success: true,
-      data: req.apiClient,
+      data: {
+        id: req.apiClient._id,
+        clientId: req.apiClient.clientId,
+        name: req.apiClient.name,
+        organization: req.apiClient.organization,
+        permissions: req.apiClient.permissions,
+        status: req.apiClient.status,
+        subscription: req.apiClient.subscription,
+        settings: req.apiClient.settings
+      }
     });
   } catch (error) {
     console.error("Check API client auth status error:", error);
@@ -552,90 +616,128 @@ export const logoutClient = async (req, res) => {
   }
 };
 
-// @desc    Get API usage report for the authenticated client
+// @desc    Get API usage report
 // @route   GET /api/clients/api-report
 // @access  Private
 export const getApiReport = async (req, res) => {
   try {
-    const client = await APIClient.findById(req.apiClient._id);
-    if (!client) {
-      return res.status(404).json({
+    // Get client ID from the token payload
+    const clientId = req.apiClient.id;
+    if (!clientId) {
+      return res.status(400).json({
         success: false,
-        message: "API client not found",
+        message: "Client ID not found in request"
       });
     }
 
-    // Get date range from query params (default to last 30 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
 
-    // Get API usage data from the client's usage history
-    const usageData = client.apiUsage.filter(usage => {
-      const usageDate = new Date(usage.timestamp);
-      return usageDate >= startDate && usageDate <= endDate;
-    });
+    // Get usage data from ApiUsage model
+    const usageData = await ApiUsage.aggregate([
+      { $match: { clientId: client._id } },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$timestamp" },
+            month: { $month: "$timestamp" },
+            day: { $dayOfMonth: "$timestamp" }
+          },
+          totalRequests: { $sum: 1 },
+          successCount: {
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+          },
+          totalResponseTime: { $sum: "$responseTime" },
+          totalRequestSize: { $sum: "$requestSize" },
+          totalResponseSize: { $sum: "$responseSize" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: {
+            $dateFromParts: {
+              year: "$_id.year",
+              month: "$_id.month",
+              day: "$_id.day"
+            }
+          },
+          totalRequests: 1,
+          successRate: {
+            $multiply: [
+              { $divide: ["$successCount", "$totalRequests"] },
+              100
+            ]
+          },
+          averageResponseTime: {
+            $divide: ["$totalResponseTime", "$totalRequests"]
+          },
+          averageRequestSize: {
+            $divide: ["$totalRequestSize", "$totalRequests"]
+          },
+          averageResponseSize: {
+            $divide: ["$totalResponseSize", "$totalRequests"]
+          }
+        }
+      },
+      { $sort: { date: -1 } },
+      { $limit: 30 }
+    ]);
 
-    // Calculate statistics
-    const totalRequests = usageData.length;
-    const successfulRequests = usageData.filter(usage => usage.status === 'success').length;
-    const failedRequests = totalRequests - successfulRequests;
-
-    // Group by API endpoint
-    const endpointStats = usageData.reduce((acc, usage) => {
-      if (!acc[usage.endpoint]) {
-        acc[usage.endpoint] = {
-          total: 0,
-          success: 0,
-          failed: 0,
-          avgResponseTime: 0,
-          totalResponseTime: 0
-        };
-      }
-      acc[usage.endpoint].total++;
-      if (usage.status === 'success') {
-        acc[usage.endpoint].success++;
-      } else {
-        acc[usage.endpoint].failed++;
-      }
-      acc[usage.endpoint].totalResponseTime += usage.responseTime || 0;
-      acc[usage.endpoint].avgResponseTime = acc[usage.endpoint].totalResponseTime / acc[usage.endpoint].total;
-      return acc;
-    }, {});
-
-    // Group by date for time series data
-    const timeSeriesData = usageData.reduce((acc, usage) => {
-      const date = new Date(usage.timestamp).toISOString().split('T')[0];
-      if (!acc[date]) {
-        acc[date] = {
-          total: 0,
-          success: 0,
-          failed: 0
-        };
-      }
-      acc[date].total++;
-      if (usage.status === 'success') {
-        acc[date].success++;
-      } else {
-        acc[date].failed++;
-      }
-      return acc;
-    }, {});
+    // Get endpoint usage
+    const endpointUsage = await ApiUsage.aggregate([
+      { $match: { clientId: client._id } },
+      {
+        $group: {
+          _id: "$endpoint",
+          count: { $sum: 1 },
+          successCount: {
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+          },
+          avgResponseTime: { $avg: "$responseTime" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          endpoint: "$_id",
+          totalRequests: "$count",
+          successRate: {
+            $multiply: [
+              { $divide: ["$successCount", "$count"] },
+              100
+            ]
+          },
+          averageResponseTime: 1
+        }
+      },
+      { $sort: { totalRequests: -1 } },
+      { $limit: 10 }
+    ]);
 
     res.json({
       success: true,
       data: {
-        summary: {
-          totalRequests,
-          successfulRequests,
-          failedRequests,
-          successRate: totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0
+        client: {
+          id: client._id,
+          name: client.name,
+          organization: client.organization.name,
+          subscription: client.subscription.tier,
+          rateLimits: client.rateLimits
         },
-        endpointStats,
-        timeSeriesData,
-        dateRange: {
-          start: startDate,
-          end: endDate
+        usage: {
+          daily: usageData,
+          endpoints: endpointUsage,
+          summary: {
+            totalRequests: client.usage.totalRequests,
+            storageUsed: client.usage.storageUsed,
+            activeUsers: client.usage.activeUsers
+          }
         }
       }
     });
@@ -643,7 +745,7 @@ export const getApiReport = async (req, res) => {
     console.error("Get API report error:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching API report",
+      message: "Error getting API report"
     });
   }
 };
@@ -815,6 +917,394 @@ export const updateUserStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating user status'
+    });
+  }
+};
+
+// @desc    Update client subscription
+// @route   PUT /api/clients/:id/subscription
+// @access  Private/Admin
+export const updateSubscription = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tier, endDate, features } = req.body;
+
+    const client = await APIClient.findById(id);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Update subscription
+    client.subscription = {
+      ...client.subscription,
+      tier: tier || client.subscription.tier,
+      endDate: endDate ? new Date(endDate) : client.subscription.endDate,
+      features: features || client.subscription.features
+    };
+
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        subscription: client.subscription
+      }
+    });
+  } catch (error) {
+    console.error("Subscription update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating subscription"
+    });
+  }
+};
+
+// @desc    Get client subscription status
+// @route   GET /api/clients/subscription
+// @access  Private
+export const getSubscriptionStatus = async (req, res) => {
+  try {
+    const clientId = req.user.clientId;
+    const client = await APIClient.findById(clientId);
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Get webhook count
+    const webhookCount = await Webhook.countDocuments({ clientId });
+
+    res.json({
+      success: true,
+      data: {
+        subscription: client.subscription,
+        usage: {
+          webhooks: {
+            current: webhookCount,
+            limit: client.subscription.features.maxWebhooks
+          },
+          apiKeys: {
+            current: client.apiKeys.length,
+            limit: client.subscription.features.maxApiKeys
+          }
+        },
+        isActive: client.isSubscriptionActive()
+      }
+    });
+  } catch (error) {
+    console.error("Subscription status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error getting subscription status"
+    });
+  }
+};
+
+// @desc    Update client settings
+// @route   PUT /api/clients/settings
+// @access  Private
+export const updateClientSettings = async (req, res) => {
+  try {
+    const clientId = req.user.clientId;
+    const { notifications, security, apiPreferences } = req.body;
+
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Update settings
+    if (notifications) {
+      client.settings.notifications = {
+        ...client.settings.notifications,
+        ...notifications
+      };
+    }
+    if (security) {
+      client.settings.security = {
+        ...client.settings.security,
+        ...security
+      };
+    }
+    if (apiPreferences) {
+      client.settings.apiPreferences = {
+        ...client.settings.apiPreferences,
+        ...apiPreferences
+      };
+    }
+
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        settings: client.settings
+      }
+    });
+  } catch (error) {
+    console.error("Settings update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating settings"
+    });
+  }
+};
+
+// @desc    Get client usage statistics
+// @route   GET /api/clients/usage
+// @access  Private
+export const getClientUsage = async (req, res) => {
+  try {
+    const clientId = req.user.clientId;
+    const { startDate, endDate } = req.query;
+
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Get API usage statistics
+    const usageStats = await ApiUsage.aggregate([
+      {
+        $match: {
+          clientId: mongoose.Types.ObjectId(clientId),
+          timestamp: {
+            $gte: new Date(startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+            $lte: new Date(endDate || Date.now())
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRequests: { $sum: 1 },
+          avgResponseTime: { $avg: "$responseTime" },
+          successCount: {
+            $sum: { $cond: [{ $eq: ["$statusCode", 200] }, 1, 0] }
+          },
+          errorCount: {
+            $sum: { $cond: [{ $ne: ["$statusCode", 200] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Get webhook count
+    const webhookCount = await Webhook.countDocuments({ clientId });
+
+    res.json({
+      success: true,
+      data: {
+        usage: {
+          ...client.usage,
+          statistics: usageStats[0] || {
+            totalRequests: 0,
+            avgResponseTime: 0,
+            successCount: 0,
+            errorCount: 0
+          },
+          webhooks: {
+            current: webhookCount,
+            limit: client.subscription.features.maxWebhooks
+          }
+        },
+        subscription: {
+          tier: client.subscription.tier,
+          features: client.subscription.features,
+          billing: client.subscription.billing
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Usage statistics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error getting usage statistics"
+    });
+  }
+};
+
+// @desc    Update billing settings
+// @route   PUT /api/clients/billing
+// @access  Private
+export const updateBillingSettings = async (req, res) => {
+  try {
+    const clientId = req.user.clientId;
+    const { plan, autoRenew } = req.body;
+
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Update billing settings
+    if (plan) {
+      client.subscription.billing.plan = plan;
+      // Update next billing date based on plan
+      const now = new Date();
+      client.subscription.billing.lastBillingDate = now;
+      switch (plan) {
+        case 'monthly':
+          client.subscription.billing.nextBillingDate = new Date(now.setMonth(now.getMonth() + 1));
+          break;
+        case 'quarterly':
+          client.subscription.billing.nextBillingDate = new Date(now.setMonth(now.getMonth() + 3));
+          break;
+        case 'annual':
+          client.subscription.billing.nextBillingDate = new Date(now.setFullYear(now.getFullYear() + 1));
+          break;
+      }
+    }
+    if (typeof autoRenew === 'boolean') {
+      client.subscription.billing.autoRenew = autoRenew;
+    }
+
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        billing: client.subscription.billing
+      }
+    });
+  } catch (error) {
+    console.error("Billing settings update error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating billing settings"
+    });
+  }
+};
+
+// @desc    Get client information
+// @route   GET /api/clients/profile
+// @access  Private
+export const getClientInfo = async (req, res) => {
+  try {
+    // Get client ID from the token payload
+    const clientId = req.apiClient.id;
+    if (!clientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Client ID not found in request"
+      });
+    }
+
+    const client = await APIClient.findById(clientId)
+      .select('-clientSecret -representative.password');
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: client._id,
+        name: client.name,
+        organization: client.organization,
+        contactPerson: client.contactPerson,
+        permissions: client.permissions,
+        status: client.status,
+        ekycConfig: client.ekycConfig,
+        ipWhitelist: client.ipWhitelist,
+        rateLimits: client.rateLimits,
+        subscription: client.subscription,
+        settings: client.settings,
+        usage: client.usage,
+        representative: {
+          email: client.representative.email,
+          firstName: client.representative.firstName,
+          lastName: client.representative.lastName,
+          phoneNumber: client.representative.phoneNumber,
+          role: client.representative.role
+        },
+        apiKeys: client.apiKeys.map(key => ({
+          id: key._id,
+          status: key.status,
+          createdAt: key.createdAt,
+          lastUsed: key.lastUsed,
+          expiresAt: key.expiresAt
+        }))
+      }
+    });
+  } catch (error) {
+    console.error("Get client info error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error getting client information"
+    });
+  }
+};
+
+// @desc    Update client information
+// @route   PUT /api/clients/profile
+// @access  Private
+export const updateClientInfo = async (req, res) => {
+  try {
+    const clientId = req.user.clientId;
+    const {
+      name,
+      organization,
+      contactPerson,
+      ipWhitelist,
+      rateLimits,
+      ekycConfig
+    } = req.body;
+
+    const client = await APIClient.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "API client not found"
+      });
+    }
+
+    // Update fields if provided
+    if (name) client.name = name;
+    if (organization) client.organization = organization;
+    if (contactPerson) client.contactPerson = contactPerson;
+    if (ipWhitelist) client.ipWhitelist = ipWhitelist;
+    if (rateLimits) client.rateLimits = rateLimits;
+    if (ekycConfig) client.ekycConfig = ekycConfig;
+
+    await client.save();
+
+    res.json({
+      success: true,
+      data: {
+        id: client._id,
+        name: client.name,
+        organization: client.organization,
+        contactPerson: client.contactPerson,
+        ipWhitelist: client.ipWhitelist,
+        rateLimits: client.rateLimits,
+        ekycConfig: client.ekycConfig
+      }
+    });
+  } catch (error) {
+    console.error("Update client info error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating client information"
     });
   }
 };

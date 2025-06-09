@@ -27,16 +27,6 @@ const apiKeySchema = new mongoose.Schema({
   }
 });
 
-// Add apiUsage schema
-const apiUsageSchema = new mongoose.Schema({
-  endpoint: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
-  status: { type: String, enum: ['success', 'failed'], required: true },
-  responseTime: { type: Number }, // in ms
-  errorType: { type: String },    // optional, for failed requests
-  requestData: { type: Object },  // optional, for debugging
-}, { _id: false });
-
 const apiClientSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -98,11 +88,6 @@ const apiClientSchema = new mongoose.Schema({
     }
   },
   apiKeys: [apiKeySchema],
-  // Add apiUsage array
-  apiUsage: {
-    type: [apiUsageSchema],
-    default: [],
-  },
   permissions: [
     {
       type: String,
@@ -151,6 +136,126 @@ const apiClientSchema = new mongoose.Schema({
       },
     },
   ],
+  subscription: {
+    tier: {
+      type: String,
+      enum: ['free', 'basic', 'premium', 'enterprise'],
+      default: 'free'
+    },
+    startDate: {
+      type: Date,
+      default: Date.now
+    },
+    endDate: {
+      type: Date,
+      default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from creation
+    },
+    features: {
+      maxWebhooks: {
+        type: Number,
+        default: 1
+      },
+      maxApiKeys: {
+        type: Number,
+        default: 2
+      },
+      maxUsers: {
+        type: Number,
+        default: 1
+      },
+      maxRequestsPerMonth: {
+        type: Number,
+        default: 10000
+      },
+      maxStorageGB: {
+        type: Number,
+        default: 1
+      },
+      prioritySupport: {
+        type: Boolean,
+        default: false
+      }
+    },
+    billing: {
+      plan: {
+        type: String,
+        enum: ['monthly', 'quarterly', 'annual'],
+        default: 'monthly'
+      },
+      lastBillingDate: Date,
+      nextBillingDate: Date,
+      autoRenew: {
+        type: Boolean,
+        default: true
+      }
+    }
+  },
+  usage: {
+    totalRequests: {
+      type: Number,
+      default: 0
+    },
+    lastRequestAt: Date,
+    storageUsed: {
+      type: Number,
+      default: 0
+    },
+    activeUsers: {
+      type: Number,
+      default: 0
+    }
+  },
+  settings: {
+    notifications: {
+      email: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        types: [{
+          type: String,
+          enum: ['usage_alerts', 'billing_alerts', 'security_alerts', 'system_updates']
+        }]
+      },
+      webhook: {
+        enabled: {
+          type: Boolean,
+          default: false
+        },
+        events: [{
+          type: String,
+          enum: ['usage_threshold', 'billing_alert', 'security_alert', 'system_update']
+        }]
+      }
+    },
+    security: {
+      mfaRequired: {
+        type: Boolean,
+        default: false
+      },
+      sessionTimeout: {
+        type: Number,
+        default: 3600 // in seconds
+      },
+      allowedOrigins: [String],
+      allowedIPs: [String]
+    },
+    apiPreferences: {
+      defaultResponseFormat: {
+        type: String,
+        enum: ['json', 'xml'],
+        default: 'json'
+      },
+      timezone: {
+        type: String,
+        default: 'UTC'
+      },
+      dateFormat: {
+        type: String,
+        default: 'ISO'
+      }
+    }
+  },
   rateLimits: {
     requestsPerMinute: {
       type: Number,
@@ -163,15 +268,6 @@ const apiClientSchema = new mongoose.Schema({
     requestsPerDay: {
       type: Number,
       default: 10000,
-    },
-  },
-  webhookUrl: {
-    type: String,
-    validate: {
-      validator: function (v) {
-        return /^https?:\/\/.+/.test(v);
-      },
-      message: (props) => `${props.value} is not a valid URL!`,
     },
   },
   apiKey: {
@@ -233,6 +329,11 @@ apiClientSchema.methods.isIPWhitelisted = function (ip) {
 
 // Method to generate new API key
 apiClientSchema.methods.generateNewApiKey = function () {
+  // Check if client has reached max API keys limit
+  if (this.apiKeys.length >= this.subscription.features.maxApiKeys) {
+    throw new Error('Maximum number of API keys reached for this subscription tier');
+  }
+
   const key = crypto.randomBytes(32).toString("hex");
   const apiKey = {
     key,
@@ -242,6 +343,16 @@ apiClientSchema.methods.generateNewApiKey = function () {
   };
   this.apiKeys.push(apiKey);
   return apiKey;
+};
+
+// Method to check subscription status
+apiClientSchema.methods.isSubscriptionActive = function() {
+  return this.subscription.endDate > new Date();
+};
+
+// Method to get subscription features
+apiClientSchema.methods.getSubscriptionFeatures = function() {
+  return this.subscription.features;
 };
 
 export default mongoose.model("APIClient", apiClientSchema);
