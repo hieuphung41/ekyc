@@ -23,6 +23,10 @@ import {
     updateClientSettings,
     getClientUsage,
     updateBillingSettings,
+    getWebhooks,
+    createWebhook,
+    updateWebhook,
+    deleteWebhook
 } from '../controllers/apiClientController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
@@ -64,6 +68,12 @@ router.put('/settings', protect, updateClientSettings);
 
 // Usage and statistics
 router.get('/usage', protect, getClientUsage);
+
+// Webhook management routes (Protected)
+router.get('/webhooks', protect, getWebhooks);
+router.post('/webhooks', protect, createWebhook);
+router.put('/webhooks/:id', protect, updateWebhook);
+router.delete('/webhooks/:id', protect, deleteWebhook);
 
 // Subscription management
 router.get('/subscription', protect, getSubscriptionStatus);

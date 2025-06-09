@@ -1061,77 +1061,118 @@ export const updateClientSettings = async (req, res) => {
 
 // @desc    Get client usage statistics
 // @route   GET /api/clients/usage
-// @access  Private
+// @access  Private (API Client)
 export const getClientUsage = async (req, res) => {
   try {
-    const clientId = req.user.clientId;
-    const { startDate, endDate } = req.query;
+    const clientId = req.apiClient._id;
 
-    const client = await APIClient.findById(clientId);
-    if (!client) {
-      return res.status(404).json({
-        success: false,
-        message: "API client not found"
-      });
-    }
+    // Get usage data for the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Get API usage statistics
-    const usageStats = await ApiUsage.aggregate([
+    const usageData = await ApiUsage.aggregate([
       {
         $match: {
-          clientId: mongoose.Types.ObjectId(clientId),
-          timestamp: {
-            $gte: new Date(startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-            $lte: new Date(endDate || Date.now())
+          clientId: new mongoose.Types.ObjectId(clientId),
+          timestamp: { $gte: thirtyDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
+            endpoint: "$endpoint"
+          },
+          totalRequests: { $sum: 1 },
+          successfulRequests: {
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+          },
+          totalResponseTime: { $sum: "$responseTime" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          endpoints: {
+            $push: {
+              path: "$_id.endpoint",
+              totalRequests: "$totalRequests",
+              successRate: {
+                $multiply: [
+                  { $divide: ["$successfulRequests", "$totalRequests"] },
+                  100
+                ]
+              },
+              averageResponseTime: {
+                $divide: ["$totalResponseTime", "$totalRequests"]
+              }
+            }
+          },
+          totalRequests: { $sum: "$totalRequests" },
+          successRate: {
+            $avg: {
+              $multiply: [
+                { $divide: ["$successfulRequests", "$totalRequests"] },
+                100
+              ]
+            }
+          },
+          averageResponseTime: {
+            $avg: { $divide: ["$totalResponseTime", "$totalRequests"] }
           }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Get total storage used
+    const storageUsed = await User.aggregate([
+      {
+        $match: {
+          clientId: new mongoose.Types.ObjectId(clientId)
         }
       },
       {
         $group: {
           _id: null,
-          totalRequests: { $sum: 1 },
-          avgResponseTime: { $avg: "$responseTime" },
-          successCount: {
-            $sum: { $cond: [{ $eq: ["$statusCode", 200] }, 1, 0] }
-          },
-          errorCount: {
-            $sum: { $cond: [{ $ne: ["$statusCode", 200] }, 1, 0] }
-          }
+          totalStorage: { $sum: "$storageUsed" }
         }
       }
     ]);
 
-    // Get webhook count
-    const webhookCount = await Webhook.countDocuments({ clientId });
+    // Get active users count
+    const activeUsers = await User.countDocuments({
+      clientId: new mongoose.Types.ObjectId(clientId),
+      status: "active"
+    });
+
+    // Format the response
+    const formattedData = {
+      summary: {
+        totalRequests: usageData.reduce((sum, day) => sum + day.totalRequests, 0),
+        storageUsed: storageUsed[0]?.totalStorage || 0,
+        activeUsers
+      },
+      daily: usageData.map(day => ({
+        date: day._id,
+        totalRequests: day.totalRequests,
+        successRate: day.successRate,
+        averageResponseTime: day.averageResponseTime,
+        endpoints: day.endpoints
+      }))
+    };
 
     res.json({
       success: true,
-      data: {
-        usage: {
-          ...client.usage,
-          statistics: usageStats[0] || {
-            totalRequests: 0,
-            avgResponseTime: 0,
-            successCount: 0,
-            errorCount: 0
-          },
-          webhooks: {
-            current: webhookCount,
-            limit: client.subscription.features.maxWebhooks
-          }
-        },
-        subscription: {
-          tier: client.subscription.tier,
-          features: client.subscription.features,
-          billing: client.subscription.billing
-        }
-      }
+      data: formattedData
     });
   } catch (error) {
     console.error("Usage statistics error:", error);
     res.status(500).json({
       success: false,
-      message: "Error getting usage statistics"
+      message: "Error fetching usage statistics"
     });
   }
 };
@@ -1305,6 +1346,136 @@ export const updateClientInfo = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error updating client information"
+    });
+  }
+};
+
+// @desc    Get all webhooks for a client
+// @route   GET /api/clients/webhooks
+// @access  Private (API Client)
+export const getWebhooks = async (req, res) => {
+  try {
+    const webhooks = await Webhook.find({ clientId: req.apiClient._id });
+    res.json({
+      success: true,
+      data: webhooks
+    });
+  } catch (error) {
+    console.error("Error fetching webhooks:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching webhooks"
+    });
+  }
+};
+
+// @desc    Create a new webhook
+// @route   POST /api/clients/webhooks
+// @access  Private (API Client)
+export const createWebhook = async (req, res) => {
+  try {
+    const { url, events, secret, description } = req.body;
+
+    // Check webhook limit
+    const webhookCount = await Webhook.countDocuments({ clientId: req.apiClient._id });
+    if (webhookCount >= req.apiClient.subscription.features.maxWebhooks) {
+      return res.status(400).json({
+        success: false,
+        message: "Webhook limit reached for your subscription tier"
+      });
+    }
+
+    const webhook = await Webhook.create({
+      clientId: req.apiClient._id,
+      url,
+      events,
+      secret,
+      description,
+      isActive: true
+    });
+
+    res.status(201).json({
+      success: true,
+      data: webhook
+    });
+  } catch (error) {
+    console.error("Error creating webhook:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error creating webhook"
+    });
+  }
+};
+
+// @desc    Update a webhook
+// @route   PUT /api/clients/webhooks/:id
+// @access  Private (API Client)
+export const updateWebhook = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { url, events, secret, description, isActive } = req.body;
+
+    const webhook = await Webhook.findOne({
+      _id: id,
+      clientId: req.apiClient._id
+    });
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        message: "Webhook not found"
+      });
+    }
+
+    webhook.url = url || webhook.url;
+    webhook.events = events || webhook.events;
+    webhook.secret = secret || webhook.secret;
+    webhook.description = description || webhook.description;
+    webhook.isActive = isActive !== undefined ? isActive : webhook.isActive;
+
+    await webhook.save();
+
+    res.json({
+      success: true,
+      data: webhook
+    });
+  } catch (error) {
+    console.error("Error updating webhook:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating webhook"
+    });
+  }
+};
+
+// @desc    Delete a webhook
+// @route   DELETE /api/clients/webhooks/:id
+// @access  Private (API Client)
+export const deleteWebhook = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const webhook = await Webhook.findOneAndDelete({
+      _id: id,
+      clientId: req.apiClient._id
+    });
+
+    if (!webhook) {
+      return res.status(404).json({
+        success: false,
+        message: "Webhook not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: webhook
+    });
+  } catch (error) {
+    console.error("Error deleting webhook:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting webhook"
     });
   }
 };

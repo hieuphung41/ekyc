@@ -225,6 +225,76 @@ export const getEkycResult = createAsyncThunk(
   }
 );
 
+// Webhook Management Thunks
+export const getWebhooks = createAsyncThunk(
+  'apiClient/getWebhooks',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients/webhooks');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch webhooks');
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch webhooks' });
+    }
+  }
+);
+
+export const createWebhook = createAsyncThunk(
+  'apiClient/createWebhook',
+  async (webhookData, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.post('/clients/webhooks', webhookData);
+      toast.success('Webhook created successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to create webhook');
+      return rejectWithValue(error.response?.data || { message: 'Failed to create webhook' });
+    }
+  }
+);
+
+export const updateWebhook = createAsyncThunk(
+  'apiClient/updateWebhook',
+  async ({ id, ...webhookData }, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.put(`/clients/webhooks/${id}`, webhookData);
+      toast.success('Webhook updated successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update webhook');
+      return rejectWithValue(error.response?.data || { message: 'Failed to update webhook' });
+    }
+  }
+);
+
+export const deleteWebhook = createAsyncThunk(
+  'apiClient/deleteWebhook',
+  async (id, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.delete(`/clients/webhooks/${id}`);
+      toast.success('Webhook deleted successfully');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to delete webhook');
+      return rejectWithValue(error.response?.data || { message: 'Failed to delete webhook' });
+    }
+  }
+);
+
+// Client Usage Thunk
+export const getClientUsage = createAsyncThunk(
+  'apiClient/getClientUsage',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axiosInstance.get('/clients/usage');
+      return response.data.data;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch usage data');
+      return rejectWithValue(error.response?.data || { message: 'Failed to fetch usage data' });
+    }
+  }
+);
+
 const initialState = {
   client: null, // Stores API client data including representative info, permissions, etc.
   isAuthenticated: false, // Indicates if an API client representative is logged in
@@ -259,7 +329,13 @@ const initialState = {
     result: null,
     loading: false,
     error: null
-  }
+  },
+  webhooks: [],
+  webhookLoading: false,
+  webhookError: null,
+  usageData: null,
+  usageLoading: false,
+  usageError: null,
 };
 
 const apiClientSlice = createSlice({
@@ -535,6 +611,46 @@ const apiClientSlice = createSlice({
       .addCase(getEkycResult.rejected, (state, action) => {
         state.loading = false;
         state.ekyc.error = action.payload?.message || 'Failed to fetch eKYC result';
+      })
+
+      // Webhook cases
+      .addCase(getWebhooks.pending, (state) => {
+        state.webhookLoading = true;
+        state.webhookError = null;
+      })
+      .addCase(getWebhooks.fulfilled, (state, action) => {
+        state.webhookLoading = false;
+        state.webhooks = action.payload;
+      })
+      .addCase(getWebhooks.rejected, (state, action) => {
+        state.webhookLoading = false;
+        state.webhookError = action.payload?.message || 'Failed to fetch webhooks';
+      })
+      .addCase(createWebhook.fulfilled, (state, action) => {
+        state.webhooks.push(action.payload);
+      })
+      .addCase(updateWebhook.fulfilled, (state, action) => {
+        const index = state.webhooks.findIndex(w => w._id === action.payload._id);
+        if (index !== -1) {
+          state.webhooks[index] = action.payload;
+        }
+      })
+      .addCase(deleteWebhook.fulfilled, (state, action) => {
+        state.webhooks = state.webhooks.filter(w => w._id !== action.payload._id);
+      })
+
+      // Usage cases
+      .addCase(getClientUsage.pending, (state) => {
+        state.usageLoading = true;
+        state.usageError = null;
+      })
+      .addCase(getClientUsage.fulfilled, (state, action) => {
+        state.usageLoading = false;
+        state.usageData = action.payload;
+      })
+      .addCase(getClientUsage.rejected, (state, action) => {
+        state.usageLoading = false;
+        state.usageError = action.payload?.message || 'Failed to fetch usage data';
       });
   },
 });
