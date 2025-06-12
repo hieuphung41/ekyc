@@ -523,7 +523,6 @@ export const regenerateApiKey = async (req, res) => {
 export const getAllClients = async (req, res) => {
   try {
     const clients = await APIClient.find({ status: "active" })
-      .select("name organization.name organization.website")
       .sort({ name: 1 });
 
     res.json({
