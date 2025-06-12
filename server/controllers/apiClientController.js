@@ -834,7 +834,11 @@ export const getClientUsers = async (req, res) => {
     const skip = (page - 1) * limit;
 
     // Build query
-    const query = { registeredBy: req.apiClient._id };
+    const query = { 
+      registeredBy: req.apiClient._id,
+      role: 'user' // Only get users with role 'user'
+    };
+
     if (status !== 'all') {
       query.status = status;
     }
