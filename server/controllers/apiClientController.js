@@ -167,13 +167,21 @@ export const loginRepresentative = async (req, res) => {
       permissions: client.permissions
     });
 
-    // Set HTTP-only cookie
-    res.cookie("auth_token_apiclient", token, {
+    // Set HTTP-only cookie with environment-specific settings
+    const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    });
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    };
+
+    // Add domain in production
+    if (process.env.NODE_ENV === 'production' && process.env.COOKIE_DOMAIN) {
+      cookieOptions.domain = process.env.COOKIE_DOMAIN;
+    }
+
+    res.cookie("auth_token_apiclient", token, cookieOptions);
 
     // Update last login
     client.lastLogin = new Date();
