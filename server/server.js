@@ -24,7 +24,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(cors({
-  origin: process.env.CLIENT_URL,
+  origin:  process.env.CLIENT_URL || "https://ekyc-olive.vercel.app",
   credentials: true
 }));
 app.use(helmet());
