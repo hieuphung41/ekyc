@@ -7,11 +7,21 @@ export const getUserKYCStatus = createAsyncThunk(
   "kyc/getUserKYCStatus",
   async (userId, { rejectWithValue }) => {
     try {
+      if (!userId) {
+        return rejectWithValue({ message: "User ID is required" });
+      }
+
       const response = await axiosInstance.get("/kyc/users/status", {
-        params: { id: userId },
+        params: { id: userId }
       });
+
+      if (!response.data.success) {
+        return rejectWithValue(response.data);
+      }
+
       return { userId, status: response.data.data };
     } catch (error) {
+      console.error("Error fetching user KYC status:", error);
       return rejectWithValue(
         error.response?.data || { message: "Failed to fetch KYC status" }
       );
