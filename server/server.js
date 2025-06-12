@@ -15,6 +15,7 @@ import { trackApiUsage } from './controllers/apiUsageController.js';
 import cookieParser from 'cookie-parser';
 import { initializeContainers } from './utils/azureStorage.js';
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -30,38 +31,75 @@ app.use(cors({
 app.use(helmet());
 app.use(morgan('dev'));
 
+// MongoDB connection options
+const mongooseOptions = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 30000,
+  maxPoolSize: 10,
+  minPoolSize: 5,
+};
+
+// Connect to MongoDB
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ekyc-platform', mongooseOptions);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    
+    // Handle connection errors after initial connection
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.log('MongoDB disconnected');
+    });
+
+    // Handle process termination
+    process.on('SIGINT', async () => {
+      await mongoose.connection.close();
+      console.log('MongoDB connection closed through app termination');
+      process.exit(0);
+    });
+
+  } catch (error) {
+    console.error('Error connecting to MongoDB:', error);
+    process.exit(1);
+  }
+};
+
 // Initialize Azure Storage containers
 initializeContainers()
   .then(() => console.log('Azure Storage containers initialized successfully'))
   .catch((err) => console.error('Azure Storage containers initialization error:', err));
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ekyc-platform')
-    .then(() => console.log('MongoDB connected successfully'))
-    .catch((err) => console.error('MongoDB connection error:', err));
+// Connect to database before starting the server
+connectDB().then(() => {
+  // API routes with rate limiting and usage tracking
+  app.use('/api/users', userRoutes);
+  app.use('/api/kyc', kycRoutes);
+  app.use('/api/clients', apiClientRoutes);
+  app.use('/api/transactions', transactionRoutes);
+  app.use('/api/webhooks', webhookRoutes);
+  app.use('/api/usage', apiUsageRoutes);
 
-// API routes with rate limiting and usage tracking
-app.use('/api/users', userRoutes);
-app.use('/api/kyc', kycRoutes);
-app.use('/api/clients', apiClientRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/usage', apiUsageRoutes);
+  // Apply rate limiting and usage tracking to all API routes
+  app.use('/api', rateLimit);
+  app.use('/api', trackApiUsage);
 
-// Apply rate limiting and usage tracking to all API routes
-app.use('/api', rateLimit);
-app.use('/api', trackApiUsage);
-
-// Error handling middleware
-app.use((err, req, res, next) => {
+  // Error handling middleware
+  app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
-        success: false,
-        message: 'Something went wrong!'
+      success: false,
+      message: 'Something went wrong!'
     });
-});
+  });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+  });
 });
