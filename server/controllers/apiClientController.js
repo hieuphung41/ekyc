@@ -170,8 +170,8 @@ export const loginRepresentative = async (req, res) => {
     // Set HTTP-only cookie
     res.cookie("auth_token_apiclient", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
