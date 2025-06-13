@@ -89,6 +89,11 @@ connectDB().then(() => {
   app.use('/api', rateLimit);
   app.use('/api', trackApiUsage);
 
+  // Simple Hello World route
+  app.get('/', (req, res) => {
+    res.json({ message: 'Hello World' });
+  });
+
   // Error handling middleware
   app.use((err, req, res, next) => {
     console.error(err.stack);
