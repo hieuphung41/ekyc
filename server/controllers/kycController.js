@@ -74,8 +74,9 @@ export const uploadFacePhoto = async (req, res) => {
     }
 
     // Validate file type
-    const allowedTypes = ["image/jpeg", "image/png"];
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
     if (!allowedTypes.includes(file.mimetype)) {
+      console.log('Invalid mimetype:', file.mimetype);
       return res.status(400).json({
         success: false,
         message: "Invalid file type. Only JPEG and PNG are allowed",

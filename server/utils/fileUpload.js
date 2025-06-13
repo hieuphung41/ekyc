@@ -48,8 +48,8 @@ const fileFilter = (req, file, cb) => {
   // Define allowed file types
   const allowedTypes = [
     "image/jpeg",
-    "image/png",
     "image/jpg",
+    "image/png",
     "application/pdf",
     "video/webm",
     "video/mp4",
@@ -59,6 +59,12 @@ const fileFilter = (req, file, cb) => {
     "audio/webm",
     "audio/webm;codecs=opus"
   ];
+
+  // Log the incoming file type for debugging
+  console.log('Processing file:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype
+  });
 
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
