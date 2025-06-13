@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://ekyc-server.onrender.com/api';
 
 export const useApiClient = () => {
   const [loading, setLoading] = useState(false);
