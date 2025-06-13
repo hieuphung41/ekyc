@@ -33,26 +33,18 @@ router.post(
 router.post(
   "/face",
   protect,
+  uploadMiddleware.single("file"),
   (req, res, next) => {
-    uploadMiddleware(req, res, (err) => {
-      if (err) {
-        console.error('Multer error:', err);
-        return res.status(400).json({
-          success: false,
-          message: err.message
-        });
-      }
-      console.log('Multer processed file:', {
-        file: req.file ? {
-          originalname: req.file.originalname,
-          mimetype: req.file.mimetype,
-          size: req.file.size,
-          hasBuffer: req.file.buffer ? true : false,
-          bufferSize: req.file.buffer?.length
-        } : 'No file'
-      });
-      next();
+    console.log('Multer processed file:', {
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        hasBuffer: req.file.buffer ? true : false,
+        bufferSize: req.file.buffer?.length
+      } : 'No file'
     });
+    next();
   },
   uploadFacePhoto
 );

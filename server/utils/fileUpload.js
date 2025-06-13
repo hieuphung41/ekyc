@@ -68,14 +68,46 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Create multer upload instance with buffer handling
-export const uploadMiddleware = multer({
+// Create multer instance
+const multerInstance = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   }
-}).single("file");
+});
+
+// Export middleware functions
+export const uploadMiddleware = {
+  single: (fieldName) => {
+    return (req, res, next) => {
+      multerInstance.single(fieldName)(req, res, (err) => {
+        if (err) {
+          console.error('Multer error:', err);
+          return res.status(400).json({
+            success: false,
+            message: err.message
+          });
+        }
+        next();
+      });
+    };
+  },
+  fields: (fields) => {
+    return (req, res, next) => {
+      multerInstance.fields(fields)(req, res, (err) => {
+        if (err) {
+          console.error('Multer error:', err);
+          return res.status(400).json({
+            success: false,
+            message: err.message
+          });
+        }
+        next();
+      });
+    };
+  }
+};
 
 // Helper function to delete temporary files
 export const deleteFile = async (filePath) => {
