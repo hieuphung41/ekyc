@@ -58,7 +58,7 @@ export const uploadFacePhoto = async (req, res) => {
     const { faceMetadata } = req.body;
     const file = req.file;
 
-    console.log('Received file:', {
+    console.log('Controller received file:', {
       originalname: file?.originalname,
       mimetype: file?.mimetype,
       size: file?.size,
@@ -66,10 +66,18 @@ export const uploadFacePhoto = async (req, res) => {
       bufferSize: file?.buffer?.length
     });
 
-    if (!file || !file.buffer) {
+    if (!file) {
       return res.status(400).json({
         success: false,
-        message: "No face photo uploaded or invalid file format",
+        message: "No face photo uploaded",
+      });
+    }
+
+    if (!file.buffer) {
+      console.error('File has no buffer:', file);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file format - no buffer data",
       });
     }
 

@@ -95,6 +95,16 @@ export const uploadMiddleware = {
             message: err.message
           });
         }
+        // Log the processed file
+        if (req.file) {
+          console.log('Multer processed file details:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            hasBuffer: req.file.buffer ? true : false,
+            bufferSize: req.file.buffer?.length
+          });
+        }
         next();
       });
     };
