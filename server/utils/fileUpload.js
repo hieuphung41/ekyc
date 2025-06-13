@@ -1,6 +1,13 @@
 import multer from "multer";
 import path from "path";
-import { CONTAINERS } from "../config/constants.js";
+
+// Define containers for different file types
+const CONTAINERS = {
+  FACE: "face-verification",
+  DOCUMENT: "document-verification",
+  VOICE: "voice-verification",
+  VIDEO: "video-verification"
+};
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -102,3 +109,6 @@ export const deleteFile = async (filePath) => {
     console.error("Error deleting file:", error);
   }
 };
+
+// Export CONTAINERS for use in other files
+export { CONTAINERS };
