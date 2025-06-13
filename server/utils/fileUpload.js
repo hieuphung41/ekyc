@@ -36,7 +36,11 @@ if (hasCloudinaryCredentials) {
   });
 } else {
   // Use memory storage instead of disk storage
-  storage = multer.memoryStorage();
+  storage = multer.memoryStorage({
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    }
+  });
 }
 
 // File filter function
@@ -64,97 +68,21 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Configure upload middleware
-const multerUpload = multer({
+// Create multer upload instance
+export const uploadMiddleware = multer({
   storage: storage,
+  fileFilter: fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-  fileFilter: fileFilter,
+  }
 });
 
-// Add error handling wrapper for multer
-export const uploadMiddleware = {
-  single: (fieldName) => {
-    return (req, res, next) => {
-      multerUpload.single(fieldName)(req, res, (err) => {
-        if (err) {
-          if (err instanceof multer.MulterError) {
-            // A Multer error occurred during upload
-            if (err.code === "LIMIT_FILE_SIZE") {
-              return res.status(400).json({
-                success: false,
-                message: "File too large. Maximum size is 10MB.",
-              });
-            }
-            return res.status(400).json({
-              success: false,
-              message: `Upload error: ${err.message}`,
-            });
-          }
-          // An unknown error occurred
-          return res.status(500).json({
-            success: false,
-            message: `Internal server error during file upload: ${err.message}`,
-          });
-        }
-
-        // If we have a validation error from our filter
-        if (req.fileValidationError) {
-          return res.status(400).json({
-            success: false,
-            message: req.fileValidationError,
-          });
-        }
-
-        // No error, proceed
-        next();
-      });
-    };
-  },
-  fields: (fields) => {
-    return (req, res, next) => {
-      multerUpload.fields(fields)(req, res, (err) => {
-        if (err) {
-          if (err instanceof multer.MulterError) {
-            // A Multer error occurred during upload
-            if (err.code === "LIMIT_FILE_SIZE") {
-              return res.status(400).json({
-                success: false,
-                message: "File too large. Maximum size is 10MB.",
-              });
-            }
-            return res.status(400).json({
-              success: false,
-              message: `Upload error: ${err.message}`,
-            });
-          }
-          // An unknown error occurred
-          return res.status(500).json({
-            success: false,
-            message: `Internal server error during file upload: ${err.message}`,
-          });
-        }
-
-        // If we have a validation error from our filter
-        if (req.fileValidationError) {
-          return res.status(400).json({
-            success: false,
-            message: req.fileValidationError,
-          });
-        }
-
-        // No error, proceed
-        next();
-      });
-    };
-  },
-};
-
-// Helper function to delete file
+// Helper function to delete temporary files
 export const deleteFile = async (filePath) => {
   try {
-    await fs.promises.unlink(filePath);
+    if (filePath && fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
   } catch (error) {
     console.error("Error deleting file:", error);
   }

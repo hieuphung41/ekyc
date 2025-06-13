@@ -140,14 +140,11 @@ export const uploadFacePhoto = async (req, res) => {
 
     await kyc.save();
 
-    // Clean up the temporary file
-    await deleteFile(file.path);
-
     // Update KYC state in cookie
     res.cookie("kycCompletedSteps", JSON.stringify(kyc.completedSteps), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
@@ -162,9 +159,6 @@ export const uploadFacePhoto = async (req, res) => {
     });
   } catch (error) {
     console.error("Face photo upload error:", error);
-    if (req.file?.path) {
-      await deleteFile(req.file.path);
-    }
     res.status(500).json({
       success: false,
       message: "Error uploading face photo",
