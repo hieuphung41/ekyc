@@ -62,13 +62,14 @@ export const uploadFacePhoto = async (req, res) => {
       originalname: file?.originalname,
       mimetype: file?.mimetype,
       size: file?.size,
-      hasBuffer: file?.buffer ? true : false
+      hasBuffer: file?.buffer ? true : false,
+      bufferSize: file?.buffer?.length
     });
 
-    if (!file) {
+    if (!file || !file.buffer) {
       return res.status(400).json({
         success: false,
-        message: "No face photo uploaded",
+        message: "No face photo uploaded or invalid file format",
       });
     }
 
@@ -106,7 +107,7 @@ export const uploadFacePhoto = async (req, res) => {
     console.log('Attempting to upload to Azure:', {
       blobName,
       contentType: file.mimetype,
-      bufferSize: file.buffer?.length
+      bufferSize: file.buffer.length
     });
 
     // Upload the file to Azure Blob Storage

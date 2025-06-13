@@ -35,7 +35,7 @@ if (hasCloudinaryCredentials) {
     },
   });
 } else {
-  // Use memory storage instead of disk storage
+  // Use memory storage with buffer
   storage = multer.memoryStorage({
     limits: {
       fileSize: 10 * 1024 * 1024, // 10MB limit
@@ -68,14 +68,14 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Create multer upload instance
+// Create multer upload instance with buffer handling
 export const uploadMiddleware = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   }
-});
+}).single("file");
 
 // Helper function to delete temporary files
 export const deleteFile = async (filePath) => {
