@@ -110,12 +110,12 @@ export const uploadFacePhoto = async (req, res) => {
     }
 
     // Generate a unique blob name
-    const fileExtension = path.extname(file.originalname);
-    const blobName = `${req.user.id}-face-${Date.now()}${fileExtension}`;
+    const timestamp = Date.now();
+    const blobName = `${req.user.id}-face-${timestamp}.jpg`;
 
     console.log('Attempting to upload to Azure:', {
       blobName,
-      contentType: file.mimetype,
+      contentType: 'image/jpeg',
       bufferSize: file.buffer.length
     });
 
@@ -124,7 +124,7 @@ export const uploadFacePhoto = async (req, res) => {
       file.buffer,
       CONTAINERS.FACE,
       blobName,
-      file.mimetype
+      'image/jpeg'
     );
 
     console.log('Successfully uploaded to Azure:', blobUrl);
