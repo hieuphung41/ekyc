@@ -58,6 +58,13 @@ export const uploadFacePhoto = async (req, res) => {
     const { faceMetadata } = req.body;
     const file = req.file;
 
+    console.log('Received file:', {
+      originalname: file?.originalname,
+      mimetype: file?.mimetype,
+      size: file?.size,
+      hasBuffer: file?.buffer ? true : false
+    });
+
     if (!file) {
       return res.status(400).json({
         success: false,
@@ -96,6 +103,12 @@ export const uploadFacePhoto = async (req, res) => {
     const fileExtension = path.extname(file.originalname);
     const blobName = `${req.user.id}-face-${Date.now()}${fileExtension}`;
 
+    console.log('Attempting to upload to Azure:', {
+      blobName,
+      contentType: file.mimetype,
+      bufferSize: file.buffer?.length
+    });
+
     // Upload the file to Azure Blob Storage
     const blobUrl = await uploadToBlobStorage(
       file.buffer,
@@ -103,6 +116,8 @@ export const uploadFacePhoto = async (req, res) => {
       blobName,
       file.mimetype
     );
+
+    console.log('Successfully uploaded to Azure:', blobUrl);
 
     // Process face metadata if available
     let livenessScore = 0;

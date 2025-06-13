@@ -69,14 +69,25 @@ export const uploadToBlobStorage = async (file, containerName, blobName, content
     let fileData;
     if (Buffer.isBuffer(file)) {
       fileData = file;
-    } else if (file.buffer) {
+    } else if (file && file.buffer) {
       fileData = file.buffer;
-    } else if (file.data) {
+    } else if (file && file.data) {
       fileData = file.data;
     } else if (typeof file === 'string') {
       fileData = Buffer.from(file);
     } else {
+      console.error('Invalid file input:', {
+        isBuffer: Buffer.isBuffer(file),
+        hasBuffer: file && file.buffer ? true : false,
+        hasData: file && file.data ? true : false,
+        isString: typeof file === 'string',
+        fileType: typeof file
+      });
       throw new Error('Invalid file input: file must be a Buffer, have a buffer property, or be a string');
+    }
+
+    if (!fileData) {
+      throw new Error('No file data available for upload');
     }
 
     // Upload the file with metadata
