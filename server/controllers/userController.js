@@ -94,10 +94,11 @@ export const login = async (req, res) => {
     // Set HTTP-only cookie with proper configuration
     res.cookie('auth_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true, // Always true in production
+      sameSite: 'none', // Changed to 'none' for cross-site requests
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      path: '/' // Ensure cookie is available for all paths
+      path: '/',
+      domain: process.env.COOKIE_DOMAIN || undefined // Add domain if specified
     });
 
     res.json({
@@ -248,11 +249,12 @@ export const changePassword = async (req, res) => {
 // @access  Private
 export const logout = async (req, res) => {
   try {
+    // Clear the auth token cookie with the same options as when setting it
     res.clearCookie('auth_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
+      secure: true, // Always true in production
+      sameSite: 'none', // Changed to 'none' for cross-site requests
+      path: '/',
     });
 
     res.status(200).json({
