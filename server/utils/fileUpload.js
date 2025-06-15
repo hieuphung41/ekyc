@@ -1,5 +1,6 @@
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 
 // Define containers for different file types
 const CONTAINERS = {
@@ -9,23 +10,46 @@ const CONTAINERS = {
   VIDEO: "video-verification"
 };
 
+// Define allowed content types for each container
+const ALLOWED_CONTENT_TYPES = {
+  [CONTAINERS.FACE]: ["image/jpeg", "image/jpg", "image/png"],
+  [CONTAINERS.DOCUMENT]: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
+  [CONTAINERS.VOICE]: ["audio/wav", "audio/webm", "audio/mp4"],
+  [CONTAINERS.VIDEO]: ["video/webm", "video/mp4"]
+};
+
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 
 // File filter function
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  // Determine container type from request path
+  let containerType;
+  if (req.path.includes('/face')) {
+    containerType = CONTAINERS.FACE;
+  } else if (req.path.includes('/document')) {
+    containerType = CONTAINERS.DOCUMENT;
+  } else if (req.path.includes('/voice')) {
+    containerType = CONTAINERS.VOICE;
+  } else if (req.path.includes('/video')) {
+    containerType = CONTAINERS.VIDEO;
+  }
+
   console.log('Incoming file type:', {
     originalname: file.originalname,
-    mimetype: file.mimetype
+    mimetype: file.mimetype,
+    containerType
   });
 
+  if (!containerType) {
+    return cb(new Error("Invalid upload endpoint"), false);
+  }
+
+  const allowedTypes = ALLOWED_CONTENT_TYPES[containerType];
   if (allowedTypes.includes(file.mimetype)) {
-    // Force JPEG mime type
-    file.mimetype = "image/jpeg";
     cb(null, true);
   } else {
-    cb(new Error("Invalid file type. Only JPEG and PNG are allowed."), false);
+    cb(new Error(`Invalid file type. Allowed types for ${containerType}: ${allowedTypes.join(', ')}`), false);
   }
 };
 
@@ -34,7 +58,7 @@ const multerInstance = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit for video files
   },
 });
 
