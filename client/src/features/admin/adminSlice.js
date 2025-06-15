@@ -213,20 +213,38 @@ export const deleteApiClient = createAsyncThunk(
 
 const initialState = {
   admin: null,
+  users: [],
+  apiClients: [],
+  stats: {
+    totalUsers: 0,
+    activeUsers: 0,
+    totalApiClients: 0,
+    activeApiClients: 0,
+    userStats: {
+      week: [],
+      month: [],
+      year: []
+    },
+    clientStats: {
+      week: [],
+      month: [],
+      year: []
+    }
+  },
   loading: false,
   error: null,
-  isAuthenticated: false,
-  stats: null,
-  users: [],
-  selectedUser: null,
-  apiClients: [],
-  selectedApiClient: null
+  success: false
 };
 
 const adminSlice = createSlice({
   name: 'admin',
   initialState,
   reducers: {
+    resetState: (state) => {
+      state.loading = false;
+      state.error = null;
+      state.success = false;
+    },
     clearError: (state) => {
       state.error = null;
     },
@@ -247,14 +265,11 @@ const adminSlice = createSlice({
       .addCase(loginAdmin.fulfilled, (state, action) => {
         state.loading = false;
         state.admin = action.payload.admin;
-        state.isAuthenticated = true;
-        state.error = null;
+        state.success = true;
       })
       .addCase(loginAdmin.rejected, (state, action) => {
         state.loading = false;
-        state.isAuthenticated = false;
-        state.admin = null;
-        state.error = action.payload?.message || 'Admin login failed';
+        state.error = action.payload?.message || 'Login failed';
       })
       
       // Logout
@@ -265,8 +280,9 @@ const adminSlice = createSlice({
       .addCase(logoutAdmin.fulfilled, (state) => {
         state.loading = false;
         state.admin = null;
-        state.isAuthenticated = false;
-        state.error = null;
+        state.users = [];
+        state.apiClients = [];
+        state.stats = initialState.stats;
       })
       .addCase(logoutAdmin.rejected, (state, action) => {
         state.loading = false;
@@ -281,13 +297,10 @@ const adminSlice = createSlice({
       .addCase(checkAdminAuth.fulfilled, (state, action) => {
         state.loading = false;
         state.admin = action.payload;
-        state.isAuthenticated = true;
-        state.error = null;
       })
       .addCase(checkAdminAuth.rejected, (state, action) => {
         state.loading = false;
         state.admin = null;
-        state.isAuthenticated = false;
         state.error = action.payload?.message || 'Admin authentication check failed';
       })
 
@@ -302,13 +315,22 @@ const adminSlice = createSlice({
           totalUsers: action.payload.totalUsers || 0,
           activeUsers: action.payload.activeUsers || 0,
           totalApiClients: action.payload.totalApiClients || 0,
-          activeApiClients: action.payload.activeApiClients || 0
+          activeApiClients: action.payload.activeApiClients || 0,
+          userStats: {
+            week: action.payload.userStats?.week || [],
+            month: action.payload.userStats?.month || [],
+            year: action.payload.userStats?.year || []
+          },
+          clientStats: {
+            week: action.payload.clientStats?.week || [],
+            month: action.payload.clientStats?.month || [],
+            year: action.payload.clientStats?.year || []
+          }
         };
-        state.error = null;
       })
       .addCase(getAdminStats.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload?.message || 'Failed to fetch admin stats';
+        state.error = action.payload?.message || 'Failed to fetch stats';
       })
 
       // Get All Users
@@ -469,5 +491,5 @@ const adminSlice = createSlice({
   }
 });
 
-export const { clearError, clearSelectedUser, clearSelectedApiClient } = adminSlice.actions;
+export const { resetState, clearError, clearSelectedUser, clearSelectedApiClient } = adminSlice.actions;
 export default adminSlice.reducer; 
