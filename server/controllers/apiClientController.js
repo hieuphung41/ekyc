@@ -370,8 +370,7 @@ export const getApiKeys = async (req, res) => {
 // @access  Private
 export const generateApiKey = async (req, res) => {
   try {
-    const clientId = req.user.clientId;
-    const client = await APIClient.findById(clientId);
+    const client = await APIClient.findById(req.apiClient._id);
 
     if (!client) {
       return res.status(404).json({
