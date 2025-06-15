@@ -28,13 +28,12 @@ ChartJS.register(
 const AdminDashboard = () => {
   const dispatch = useDispatch();
   const { stats, loading } = useSelector((state) => state.admin);
-  const [userPeriod, setUserPeriod] = useState('month'); // Default to month
-  const [clientPeriod, setClientPeriod] = useState('month'); // Default to month
+  const [userPeriod, setUserPeriod] = useState('month');
+  const [clientPeriod, setClientPeriod] = useState('month');
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // The updated getAdminStats now fetches time-based data
         await dispatch(getAdminStats()).unwrap();
       } catch (error) {
         console.error('Failed to fetch admin stats:', error);
@@ -45,7 +44,17 @@ const AdminDashboard = () => {
 
   // Prepare chart data for users based on selected period
   const userChartData = {
-    labels: stats?.userStats?.[userPeriod]?.map(stat => stat._id) || [],
+    labels: stats?.userStats?.[userPeriod]?.map(stat => {
+      // Format the date based on period
+      if (userPeriod === 'week') {
+        return `Week ${stat._id.split('-')[1]}`;
+      } else if (userPeriod === 'month') {
+        const [year, month] = stat._id.split('-');
+        return `${month}/${year}`;
+      } else {
+        return stat._id;
+      }
+    }) || [],
     datasets: [
       {
         label: `New Users (${userPeriod.charAt(0).toUpperCase() + userPeriod.slice(1)})`,
@@ -63,7 +72,17 @@ const AdminDashboard = () => {
 
   // Prepare chart data for API clients based on selected period
   const clientChartData = {
-    labels: stats?.clientStats?.[clientPeriod]?.map(stat => stat._id) || [],
+    labels: stats?.clientStats?.[clientPeriod]?.map(stat => {
+      // Format the date based on period
+      if (clientPeriod === 'week') {
+        return `Week ${stat._id.split('-')[1]}`;
+      } else if (clientPeriod === 'month') {
+        const [year, month] = stat._id.split('-');
+        return `${month}/${year}`;
+      } else {
+        return stat._id;
+      }
+    }) || [],
     datasets: [
       {
         label: `New API Clients (${clientPeriod.charAt(0).toUpperCase() + clientPeriod.slice(1)})`,
@@ -87,7 +106,7 @@ const AdminDashboard = () => {
         position: 'top',
       },
       title: {
-        display: false, // Title is now in the h3 tag above the chart
+        display: false,
       },
     },
     scales: {
@@ -98,11 +117,10 @@ const AdminDashboard = () => {
         },
       },
       x: {
-        // Configure x-axis for better label display if needed
         ticks: {
-            autoSkip: true,
-            maxRotation: 45, // Adjust rotation for readability
-            minRotation: 45,
+          autoSkip: true,
+          maxRotation: 45,
+          minRotation: 45,
         }
       }
     },
@@ -115,12 +133,15 @@ const AdminDashboard = () => {
         <div className="flex-1 p-8">
           <div className="animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              {[1, 2, 3].map((i) => (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+              {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-32 bg-gray-200 rounded"></div>
               ))}
             </div>
-            <div className="h-96 bg-gray-200 rounded"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="h-96 bg-gray-200 rounded"></div>
+              <div className="h-96 bg-gray-200 rounded"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -134,15 +155,24 @@ const AdminDashboard = () => {
         <h1 className="text-2xl font-semibold text-gray-900 mb-8">Dashboard</h1>
         
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-medium text-gray-900">Total Users</h3>
             <p className="text-3xl font-bold text-indigo-600 mt-2">
               {stats?.totalUsers?.toLocaleString() || 0}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-              {/* You might add new users today stat if backend provides it */}
               Overall count
+            </p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-medium text-gray-900">Active Users</h3>
+            <p className="text-3xl font-bold text-indigo-600 mt-2">
+              {stats?.activeUsers?.toLocaleString() || 0}
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              Currently active
             </p>
           </div>
           
@@ -152,17 +182,17 @@ const AdminDashboard = () => {
               {stats?.totalApiClients?.toLocaleString() || 0}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-               Overall count
+              Overall count
             </p>
           </div>
-          
+
           <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-medium text-gray-900">Active Sessions</h3>
+            <h3 className="text-lg font-medium text-gray-900">Active API Clients</h3>
             <p className="text-3xl font-bold text-indigo-600 mt-2">
-              {stats?.activeSessions?.toLocaleString() || 0}
+              {stats?.activeApiClients?.toLocaleString() || 0}
             </p>
             <p className="text-sm text-gray-500 mt-2">
-              Across all platforms
+              Currently active
             </p>
           </div>
         </div>
@@ -190,12 +220,12 @@ const AdminDashboard = () => {
           
           {/* API Client Growth Chart */}
           <div className="bg-white rounded-lg shadow p-6">
-             <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-medium text-gray-900">API Client Growth</h3>
               <select 
                 value={clientPeriod} 
                 onChange={e => setClientPeriod(e.target.value)}
-                 className="block w-auto rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                className="block w-auto rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
               >
                 <option value="week">By Week</option>
                 <option value="month">By Month</option>

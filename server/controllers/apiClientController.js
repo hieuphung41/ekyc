@@ -603,9 +603,9 @@ export const logoutClient = async (req, res) => {
   try {
     res.clearCookie("auth_token_apiclient", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
+      secure: true, // Always true in production
+      sameSite: 'none', // Changed to 'none' for cross-site requests
+      path: '/',
     });
 
     res.status(200).json({
