@@ -21,7 +21,7 @@ export const registerClient = async (req, res) => {
       rateLimits,
       ekycConfig,
       representative,
-      subscription
+      subscription,
     } = req.body;
 
     // Check if representative email already exists
@@ -85,15 +85,15 @@ export const registerClient = async (req, res) => {
       ekycConfig,
       representative,
       subscription: subscription || {
-        tier: 'free',
+        tier: "free",
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         features: {
           maxWebhooks: 1,
           maxApiKeys: 2,
-          maxUsers: 1
-        }
-      }
+          maxUsers: 1,
+        },
+      },
     });
 
     res.status(201).json({
@@ -133,28 +133,31 @@ export const loginRepresentative = async (req, res) => {
     const { email, password } = req.body;
 
     // Find client by representative email
-    const client = await APIClient.findOne({ 'representative.email': email });
+    const client = await APIClient.findOne({ "representative.email": email });
     if (!client) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
     // Verify password
-    const isMatch = await bcrypt.compare(password, client.representative.password);
+    const isMatch = await bcrypt.compare(
+      password,
+      client.representative.password
+    );
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
     // Check if client is active
-    if (client.status !== 'active') {
+    if (client.status !== "active") {
       return res.status(403).json({
         success: false,
-        message: "Account is not active"
+        message: "Account is not active",
       });
     }
 
@@ -162,17 +165,18 @@ export const loginRepresentative = async (req, res) => {
     const token = generateToken({
       id: client._id,
       email: client.representative.email,
-      role: 'api-client',
+      role: "api-client",
       clientId: client.clientId,
-      permissions: client.permissions
+      permissions: client.permissions,
     });
 
-    // Set HTTP-only cookie
+    // Set HTTP-only cookie with proper configuration
     res.cookie("auth_token_apiclient", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: "/", // Ensure cookie is available for all paths
     });
 
     // Update last login
@@ -190,15 +194,15 @@ export const loginRepresentative = async (req, res) => {
           permissions: client.permissions,
           status: client.status,
           subscription: client.subscription,
-          settings: client.settings
-        }
-      }
+          settings: client.settings,
+        },
+      },
     });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({
       success: false,
-      message: "Error during login"
+      message: "Error during login",
     });
   }
 };
@@ -339,13 +343,13 @@ export const getApiKeys = async (req, res) => {
     }
 
     // Return the API keys with their status and metadata
-    const apiKeys = client.apiKeys.map(key => ({
+    const apiKeys = client.apiKeys.map((key) => ({
       _id: key._id,
       key: key.key,
       status: key.status,
       createdAt: key.createdAt,
       lastUsed: key.lastUsed,
-      expiresAt: key.expiresAt
+      expiresAt: key.expiresAt,
     }));
 
     res.json({
@@ -372,7 +376,7 @@ export const generateApiKey = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -380,7 +384,7 @@ export const generateApiKey = async (req, res) => {
     if (!client.isSubscriptionActive()) {
       return res.status(403).json({
         success: false,
-        message: "Subscription has expired"
+        message: "Subscription has expired",
       });
     }
 
@@ -388,7 +392,8 @@ export const generateApiKey = async (req, res) => {
     if (client.apiKeys.length >= client.subscription.features.maxApiKeys) {
       return res.status(403).json({
         success: false,
-        message: "Maximum number of API keys reached for this subscription tier"
+        message:
+          "Maximum number of API keys reached for this subscription tier",
       });
     }
 
@@ -399,14 +404,14 @@ export const generateApiKey = async (req, res) => {
       success: true,
       data: {
         apiKey: apiKey.key,
-        expiresAt: apiKey.expiresAt
-      }
+        expiresAt: apiKey.expiresAt,
+      },
     });
   } catch (error) {
     console.error("API key generation error:", error);
     res.status(500).json({
       success: false,
-      message: "Error generating API key"
+      message: "Error generating API key",
     });
   }
 };
@@ -417,7 +422,7 @@ export const generateApiKey = async (req, res) => {
 export const revokeApiKey = async (req, res) => {
   try {
     const { keyId } = req.body;
-    
+
     if (!keyId) {
       return res.status(400).json({
         success: false,
@@ -441,14 +446,14 @@ export const revokeApiKey = async (req, res) => {
       });
     }
 
-    apiKey.status = 'revoked';
+    apiKey.status = "revoked";
     await client.save();
 
     res.json({
       success: true,
       data: {
         _id: apiKey._id,
-        status: apiKey.status
+        status: apiKey.status,
       },
     });
   } catch (error) {
@@ -466,7 +471,7 @@ export const revokeApiKey = async (req, res) => {
 export const regenerateApiKey = async (req, res) => {
   try {
     const { keyId } = req.body;
-    
+
     if (!keyId) {
       return res.status(400).json({
         success: false,
@@ -493,7 +498,7 @@ export const regenerateApiKey = async (req, res) => {
     // Generate new key and update the existing one
     const newKey = crypto.randomBytes(32).toString("hex");
     apiKey.key = newKey;
-    apiKey.status = 'active';
+    apiKey.status = "active";
     apiKey.createdAt = new Date();
     apiKey.lastUsed = null;
     await client.save();
@@ -505,7 +510,7 @@ export const regenerateApiKey = async (req, res) => {
         key: apiKey.key,
         status: apiKey.status,
         createdAt: apiKey.createdAt,
-        expiresAt: apiKey.expiresAt
+        expiresAt: apiKey.expiresAt,
       },
     });
   } catch (error) {
@@ -522,8 +527,9 @@ export const regenerateApiKey = async (req, res) => {
 // @access  Public
 export const getAllClients = async (req, res) => {
   try {
-    const clients = await APIClient.find({ status: "active" })
-      .sort({ name: 1 });
+    const clients = await APIClient.find({ status: "active" }).sort({
+      name: 1,
+    });
 
     res.json({
       success: true,
@@ -543,16 +549,16 @@ export const getAllClients = async (req, res) => {
 // @access  Private
 export const checkClientAuthStatus = async (req, res) => {
   try {
-    console.log('Checking auth status:', {
+    console.log("Checking auth status:", {
       hasApiClient: !!req.apiClient,
       clientId: req.apiClient?.clientId,
-      status: req.apiClient?.status
+      status: req.apiClient?.status,
     });
 
     // If we reach this point, the protect middleware has already authenticated the API client
     // The authenticated client object is available in req.apiClient
     if (!req.apiClient) {
-      console.log('No API client found in request');
+      console.log("No API client found in request");
       return res.status(401).json({
         success: false,
         message: "Not authorized: No API client found",
@@ -560,8 +566,8 @@ export const checkClientAuthStatus = async (req, res) => {
     }
 
     // Verify the client is active
-    if (req.apiClient.status !== 'active') {
-      console.log('API client is not active:', req.apiClient.status);
+    if (req.apiClient.status !== "active") {
+      console.log("API client is not active:", req.apiClient.status);
       return res.status(403).json({
         success: false,
         message: "API client account is not active",
@@ -578,8 +584,8 @@ export const checkClientAuthStatus = async (req, res) => {
         permissions: req.apiClient.permissions,
         status: req.apiClient.status,
         subscription: req.apiClient.subscription,
-        settings: req.apiClient.settings
-      }
+        settings: req.apiClient.settings,
+      },
     });
   } catch (error) {
     console.error("Check API client auth status error:", error);
@@ -595,14 +601,14 @@ export const checkClientAuthStatus = async (req, res) => {
 // @access  Private
 export const logoutClient = async (req, res) => {
   try {
-    // Clear the auth_token_apiclient cookie
-    res.cookie("auth_token_apiclient", "", {
+    res.clearCookie("auth_token_apiclient", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "development",
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
     });
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: "Logged out successfully",
     });
@@ -625,7 +631,7 @@ export const getApiReport = async (req, res) => {
     if (!clientId) {
       return res.status(400).json({
         success: false,
-        message: "Client ID not found in request"
+        message: "Client ID not found in request",
       });
     }
 
@@ -633,7 +639,7 @@ export const getApiReport = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -645,16 +651,16 @@ export const getApiReport = async (req, res) => {
           _id: {
             year: { $year: "$timestamp" },
             month: { $month: "$timestamp" },
-            day: { $dayOfMonth: "$timestamp" }
+            day: { $dayOfMonth: "$timestamp" },
           },
           totalRequests: { $sum: 1 },
           successCount: {
-            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] },
           },
           totalResponseTime: { $sum: "$responseTime" },
           totalRequestSize: { $sum: "$requestSize" },
-          totalResponseSize: { $sum: "$responseSize" }
-        }
+          totalResponseSize: { $sum: "$responseSize" },
+        },
       },
       {
         $project: {
@@ -663,29 +669,26 @@ export const getApiReport = async (req, res) => {
             $dateFromParts: {
               year: "$_id.year",
               month: "$_id.month",
-              day: "$_id.day"
-            }
+              day: "$_id.day",
+            },
           },
           totalRequests: 1,
           successRate: {
-            $multiply: [
-              { $divide: ["$successCount", "$totalRequests"] },
-              100
-            ]
+            $multiply: [{ $divide: ["$successCount", "$totalRequests"] }, 100],
           },
           averageResponseTime: {
-            $divide: ["$totalResponseTime", "$totalRequests"]
+            $divide: ["$totalResponseTime", "$totalRequests"],
           },
           averageRequestSize: {
-            $divide: ["$totalRequestSize", "$totalRequests"]
+            $divide: ["$totalRequestSize", "$totalRequests"],
           },
           averageResponseSize: {
-            $divide: ["$totalResponseSize", "$totalRequests"]
-          }
-        }
+            $divide: ["$totalResponseSize", "$totalRequests"],
+          },
+        },
       },
       { $sort: { date: -1 } },
-      { $limit: 30 }
+      { $limit: 30 },
     ]);
 
     // Get endpoint usage
@@ -696,10 +699,10 @@ export const getApiReport = async (req, res) => {
           _id: "$endpoint",
           count: { $sum: 1 },
           successCount: {
-            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] },
           },
-          avgResponseTime: { $avg: "$responseTime" }
-        }
+          avgResponseTime: { $avg: "$responseTime" },
+        },
       },
       {
         $project: {
@@ -707,16 +710,13 @@ export const getApiReport = async (req, res) => {
           endpoint: "$_id",
           totalRequests: "$count",
           successRate: {
-            $multiply: [
-              { $divide: ["$successCount", "$count"] },
-              100
-            ]
+            $multiply: [{ $divide: ["$successCount", "$count"] }, 100],
           },
-          averageResponseTime: 1
-        }
+          averageResponseTime: 1,
+        },
       },
       { $sort: { totalRequests: -1 } },
-      { $limit: 10 }
+      { $limit: 10 },
     ]);
 
     res.json({
@@ -727,7 +727,7 @@ export const getApiReport = async (req, res) => {
           name: client.name,
           organization: client.organization.name,
           subscription: client.subscription.tier,
-          rateLimits: client.rateLimits
+          rateLimits: client.rateLimits,
         },
         usage: {
           daily: usageData,
@@ -735,16 +735,16 @@ export const getApiReport = async (req, res) => {
           summary: {
             totalRequests: client.usage.totalRequests,
             storageUsed: client.usage.storageUsed,
-            activeUsers: client.usage.activeUsers
-          }
-        }
-      }
+            activeUsers: client.usage.activeUsers,
+          },
+        },
+      },
     });
   } catch (error) {
     console.error("Get API report error:", error);
     res.status(500).json({
       success: false,
-      message: "Error getting API report"
+      message: "Error getting API report",
     });
   }
 };
@@ -756,7 +756,7 @@ export const getEndpointReport = async (req, res) => {
   try {
     const { endpoint } = req.params;
     const client = await APIClient.findById(req.apiClient._id);
-    
+
     if (!client) {
       return res.status(404).json({
         success: false,
@@ -770,27 +770,35 @@ export const getEndpointReport = async (req, res) => {
     startDate.setDate(startDate.getDate() - 30);
 
     // Filter usage data for the specific endpoint
-    const endpointUsage = client.apiUsage.filter(usage => {
+    const endpointUsage = client.apiUsage.filter((usage) => {
       const usageDate = new Date(usage.timestamp);
-      return usage.endpoint === endpoint && 
-             usageDate >= startDate && 
-             usageDate <= endDate;
+      return (
+        usage.endpoint === endpoint &&
+        usageDate >= startDate &&
+        usageDate <= endDate
+      );
     });
 
     // Calculate detailed statistics
     const totalRequests = endpointUsage.length;
-    const successfulRequests = endpointUsage.filter(usage => usage.status === 'success').length;
+    const successfulRequests = endpointUsage.filter(
+      (usage) => usage.status === "success"
+    ).length;
     const failedRequests = totalRequests - successfulRequests;
-    
+
     // Calculate average response time
-    const totalResponseTime = endpointUsage.reduce((sum, usage) => sum + (usage.responseTime || 0), 0);
-    const avgResponseTime = totalRequests > 0 ? totalResponseTime / totalRequests : 0;
+    const totalResponseTime = endpointUsage.reduce(
+      (sum, usage) => sum + (usage.responseTime || 0),
+      0
+    );
+    const avgResponseTime =
+      totalRequests > 0 ? totalResponseTime / totalRequests : 0;
 
     // Group by error type for failed requests
     const errorStats = endpointUsage
-      .filter(usage => usage.status === 'failed')
+      .filter((usage) => usage.status === "failed")
       .reduce((acc, usage) => {
-        const errorType = usage.errorType || 'unknown';
+        const errorType = usage.errorType || "unknown";
         acc[errorType] = (acc[errorType] || 0) + 1;
         return acc;
       }, {});
@@ -803,18 +811,19 @@ export const getEndpointReport = async (req, res) => {
           totalRequests,
           successfulRequests,
           failedRequests,
-          successRate: totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0,
-          avgResponseTime
+          successRate:
+            totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0,
+          avgResponseTime,
         },
         errorStats,
-        usage: endpointUsage.map(usage => ({
+        usage: endpointUsage.map((usage) => ({
           timestamp: usage.timestamp,
           status: usage.status,
           responseTime: usage.responseTime,
           errorType: usage.errorType,
-          requestData: usage.requestData
-        }))
-      }
+          requestData: usage.requestData,
+        })),
+      },
     });
   } catch (error) {
     console.error("Get endpoint report error:", error);
@@ -830,23 +839,23 @@ export const getEndpointReport = async (req, res) => {
 // @access  Private
 export const getClientUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', status = 'all' } = req.query;
+    const { page = 1, limit = 10, search = "", status = "all" } = req.query;
     const skip = (page - 1) * limit;
 
     // Build query
-    const query = { 
+    const query = {
       registeredBy: req.apiClient._id,
-      role: 'user' // Only get users with role 'user'
+      role: "user", // Only get users with role 'user'
     };
 
-    if (status !== 'all') {
+    if (status !== "all") {
       query.status = status;
     }
     if (search) {
       query.$or = [
-        { email: { $regex: search, $options: 'i' } },
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } }
+        { email: { $regex: search, $options: "i" } },
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -855,7 +864,7 @@ export const getClientUsers = async (req, res) => {
 
     // Get users with pagination
     const users = await User.find(query)
-      .select('-password')
+      .select("-password")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -866,14 +875,14 @@ export const getClientUsers = async (req, res) => {
         users,
         total,
         page: parseInt(page),
-        limit: parseInt(limit)
-      }
+        limit: parseInt(limit),
+      },
     });
   } catch (error) {
-    console.error('Get client users error:', error);
+    console.error("Get client users error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching users'
+      message: "Error fetching users",
     });
   }
 };
@@ -887,23 +896,23 @@ export const updateUserStatus = async (req, res) => {
     const { status } = req.body;
 
     // Validate status
-    if (!['active', 'pending', 'suspended'].includes(status)) {
+    if (!["active", "pending", "suspended"].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status'
+        message: "Invalid status",
       });
     }
 
     // Find user and verify it belongs to this API client
     const user = await User.findOne({
       _id: userId,
-      registeredBy: req.apiClient._id
+      registeredBy: req.apiClient._id,
     });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
@@ -913,13 +922,13 @@ export const updateUserStatus = async (req, res) => {
 
     res.json({
       success: true,
-      data: user
+      data: user,
     });
   } catch (error) {
-    console.error('Update user status error:', error);
+    console.error("Update user status error:", error);
     res.status(500).json({
       success: false,
-      message: 'Error updating user status'
+      message: "Error updating user status",
     });
   }
 };
@@ -936,7 +945,7 @@ export const updateSubscription = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -945,7 +954,7 @@ export const updateSubscription = async (req, res) => {
       ...client.subscription,
       tier: tier || client.subscription.tier,
       endDate: endDate ? new Date(endDate) : client.subscription.endDate,
-      features: features || client.subscription.features
+      features: features || client.subscription.features,
     };
 
     await client.save();
@@ -953,14 +962,14 @@ export const updateSubscription = async (req, res) => {
     res.json({
       success: true,
       data: {
-        subscription: client.subscription
-      }
+        subscription: client.subscription,
+      },
     });
   } catch (error) {
     console.error("Subscription update error:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating subscription"
+      message: "Error updating subscription",
     });
   }
 };
@@ -976,7 +985,7 @@ export const getSubscriptionStatus = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -990,21 +999,21 @@ export const getSubscriptionStatus = async (req, res) => {
         usage: {
           webhooks: {
             current: webhookCount,
-            limit: client.subscription.features.maxWebhooks
+            limit: client.subscription.features.maxWebhooks,
           },
           apiKeys: {
             current: client.apiKeys.length,
-            limit: client.subscription.features.maxApiKeys
-          }
+            limit: client.subscription.features.maxApiKeys,
+          },
         },
-        isActive: client.isSubscriptionActive()
-      }
+        isActive: client.isSubscriptionActive(),
+      },
     });
   } catch (error) {
     console.error("Subscription status error:", error);
     res.status(500).json({
       success: false,
-      message: "Error getting subscription status"
+      message: "Error getting subscription status",
     });
   }
 };
@@ -1021,7 +1030,7 @@ export const updateClientSettings = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -1029,19 +1038,19 @@ export const updateClientSettings = async (req, res) => {
     if (notifications) {
       client.settings.notifications = {
         ...client.settings.notifications,
-        ...notifications
+        ...notifications,
       };
     }
     if (security) {
       client.settings.security = {
         ...client.settings.security,
-        ...security
+        ...security,
       };
     }
     if (apiPreferences) {
       client.settings.apiPreferences = {
         ...client.settings.apiPreferences,
-        ...apiPreferences
+        ...apiPreferences,
       };
     }
 
@@ -1050,14 +1059,14 @@ export const updateClientSettings = async (req, res) => {
     res.json({
       success: true,
       data: {
-        settings: client.settings
-      }
+        settings: client.settings,
+      },
     });
   } catch (error) {
     console.error("Settings update error:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating settings"
+      message: "Error updating settings",
     });
   }
 };
@@ -1077,21 +1086,21 @@ export const getClientUsage = async (req, res) => {
       {
         $match: {
           clientId: new mongoose.Types.ObjectId(clientId),
-          timestamp: { $gte: thirtyDaysAgo }
-        }
+          timestamp: { $gte: thirtyDaysAgo },
+        },
       },
       {
         $group: {
           _id: {
             date: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
-            endpoint: "$endpoint"
+            endpoint: "$endpoint",
           },
           totalRequests: { $sum: 1 },
           successfulRequests: {
-            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] },
           },
-          totalResponseTime: { $sum: "$responseTime" }
-        }
+          totalResponseTime: { $sum: "$responseTime" },
+        },
       },
       {
         $group: {
@@ -1103,79 +1112,82 @@ export const getClientUsage = async (req, res) => {
               successRate: {
                 $multiply: [
                   { $divide: ["$successfulRequests", "$totalRequests"] },
-                  100
-                ]
+                  100,
+                ],
               },
               averageResponseTime: {
-                $divide: ["$totalResponseTime", "$totalRequests"]
-              }
-            }
+                $divide: ["$totalResponseTime", "$totalRequests"],
+              },
+            },
           },
           totalRequests: { $sum: "$totalRequests" },
           successRate: {
             $avg: {
               $multiply: [
                 { $divide: ["$successfulRequests", "$totalRequests"] },
-                100
-              ]
-            }
+                100,
+              ],
+            },
           },
           averageResponseTime: {
-            $avg: { $divide: ["$totalResponseTime", "$totalRequests"] }
-          }
-        }
+            $avg: { $divide: ["$totalResponseTime", "$totalRequests"] },
+          },
+        },
       },
       {
-        $sort: { _id: 1 }
-      }
+        $sort: { _id: 1 },
+      },
     ]);
 
     // Get total storage used
     const storageUsed = await User.aggregate([
       {
         $match: {
-          clientId: new mongoose.Types.ObjectId(clientId)
-        }
+          clientId: new mongoose.Types.ObjectId(clientId),
+        },
       },
       {
         $group: {
           _id: null,
-          totalStorage: { $sum: "$storageUsed" }
-        }
-      }
+          totalStorage: { $sum: "$storageUsed" },
+        },
+      },
     ]);
 
     // Get active users count
     const activeUsers = await User.countDocuments({
       clientId: new mongoose.Types.ObjectId(clientId),
-      status: "active"
+      status: "active",
     });
 
     // Format the response
     const formattedData = {
       summary: {
-        totalRequests: usageData.reduce((sum, day) => sum + day.totalRequests, 0),
+        totalRequests: usageData.reduce(
+          (sum, day) => sum + day.totalRequests,
+          0
+        ),
         storageUsed: storageUsed[0]?.totalStorage || 0,
-        activeUsers
+        activeUsers,
       },
-      daily: usageData.map(day => ({
+      daily: usageData.map((day) => ({
         date: day._id,
         totalRequests: day.totalRequests,
         successRate: day.successRate,
         averageResponseTime: day.averageResponseTime,
-        endpoints: day.endpoints
-      }))
+        endpoints: day.endpoints,
+      })),
     };
 
     res.json({
       success: true,
-      data: formattedData
+      data: formattedData,
     });
   } catch (error) {
     console.error("Usage statistics error:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching usage statistics"
+      message: "Error fetching usage statistics",
     });
   }
 };
@@ -1192,7 +1204,7 @@ export const updateBillingSettings = async (req, res) => {
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -1203,18 +1215,24 @@ export const updateBillingSettings = async (req, res) => {
       const now = new Date();
       client.subscription.billing.lastBillingDate = now;
       switch (plan) {
-        case 'monthly':
-          client.subscription.billing.nextBillingDate = new Date(now.setMonth(now.getMonth() + 1));
+        case "monthly":
+          client.subscription.billing.nextBillingDate = new Date(
+            now.setMonth(now.getMonth() + 1)
+          );
           break;
-        case 'quarterly':
-          client.subscription.billing.nextBillingDate = new Date(now.setMonth(now.getMonth() + 3));
+        case "quarterly":
+          client.subscription.billing.nextBillingDate = new Date(
+            now.setMonth(now.getMonth() + 3)
+          );
           break;
-        case 'annual':
-          client.subscription.billing.nextBillingDate = new Date(now.setFullYear(now.getFullYear() + 1));
+        case "annual":
+          client.subscription.billing.nextBillingDate = new Date(
+            now.setFullYear(now.getFullYear() + 1)
+          );
           break;
       }
     }
-    if (typeof autoRenew === 'boolean') {
+    if (typeof autoRenew === "boolean") {
       client.subscription.billing.autoRenew = autoRenew;
     }
 
@@ -1223,14 +1241,14 @@ export const updateBillingSettings = async (req, res) => {
     res.json({
       success: true,
       data: {
-        billing: client.subscription.billing
-      }
+        billing: client.subscription.billing,
+      },
     });
   } catch (error) {
     console.error("Billing settings update error:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating billing settings"
+      message: "Error updating billing settings",
     });
   }
 };
@@ -1245,17 +1263,18 @@ export const getClientInfo = async (req, res) => {
     if (!clientId) {
       return res.status(400).json({
         success: false,
-        message: "Client ID not found in request"
+        message: "Client ID not found in request",
       });
     }
 
-    const client = await APIClient.findById(clientId)
-      .select('-clientSecret -representative.password');
+    const client = await APIClient.findById(clientId).select(
+      "-clientSecret -representative.password"
+    );
 
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -1279,22 +1298,22 @@ export const getClientInfo = async (req, res) => {
           firstName: client.representative.firstName,
           lastName: client.representative.lastName,
           phoneNumber: client.representative.phoneNumber,
-          role: client.representative.role
+          role: client.representative.role,
         },
-        apiKeys: client.apiKeys.map(key => ({
+        apiKeys: client.apiKeys.map((key) => ({
           id: key._id,
           status: key.status,
           createdAt: key.createdAt,
           lastUsed: key.lastUsed,
-          expiresAt: key.expiresAt
-        }))
-      }
+          expiresAt: key.expiresAt,
+        })),
+      },
     });
   } catch (error) {
     console.error("Get client info error:", error);
     res.status(500).json({
       success: false,
-      message: "Error getting client information"
+      message: "Error getting client information",
     });
   }
 };
@@ -1311,14 +1330,14 @@ export const updateClientInfo = async (req, res) => {
       contactPerson,
       ipWhitelist,
       rateLimits,
-      ekycConfig
+      ekycConfig,
     } = req.body;
 
     const client = await APIClient.findById(clientId);
     if (!client) {
       return res.status(404).json({
         success: false,
-        message: "API client not found"
+        message: "API client not found",
       });
     }
 
@@ -1341,14 +1360,14 @@ export const updateClientInfo = async (req, res) => {
         contactPerson: client.contactPerson,
         ipWhitelist: client.ipWhitelist,
         rateLimits: client.rateLimits,
-        ekycConfig: client.ekycConfig
-      }
+        ekycConfig: client.ekycConfig,
+      },
     });
   } catch (error) {
     console.error("Update client info error:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating client information"
+      message: "Error updating client information",
     });
   }
 };
@@ -1361,13 +1380,13 @@ export const getWebhooks = async (req, res) => {
     const webhooks = await Webhook.find({ clientId: req.apiClient._id });
     res.json({
       success: true,
-      data: webhooks
+      data: webhooks,
     });
   } catch (error) {
     console.error("Error fetching webhooks:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching webhooks"
+      message: "Error fetching webhooks",
     });
   }
 };
@@ -1380,11 +1399,13 @@ export const createWebhook = async (req, res) => {
     const { url, events, secret, description } = req.body;
 
     // Check webhook limit
-    const webhookCount = await Webhook.countDocuments({ clientId: req.apiClient._id });
+    const webhookCount = await Webhook.countDocuments({
+      clientId: req.apiClient._id,
+    });
     if (webhookCount >= req.apiClient.subscription.features.maxWebhooks) {
       return res.status(400).json({
         success: false,
-        message: "Webhook limit reached for your subscription tier"
+        message: "Webhook limit reached for your subscription tier",
       });
     }
 
@@ -1394,18 +1415,18 @@ export const createWebhook = async (req, res) => {
       events,
       secret,
       description,
-      isActive: true
+      isActive: true,
     });
 
     res.status(201).json({
       success: true,
-      data: webhook
+      data: webhook,
     });
   } catch (error) {
     console.error("Error creating webhook:", error);
     res.status(500).json({
       success: false,
-      message: "Error creating webhook"
+      message: "Error creating webhook",
     });
   }
 };
@@ -1420,13 +1441,13 @@ export const updateWebhook = async (req, res) => {
 
     const webhook = await Webhook.findOne({
       _id: id,
-      clientId: req.apiClient._id
+      clientId: req.apiClient._id,
     });
 
     if (!webhook) {
       return res.status(404).json({
         success: false,
-        message: "Webhook not found"
+        message: "Webhook not found",
       });
     }
 
@@ -1440,13 +1461,13 @@ export const updateWebhook = async (req, res) => {
 
     res.json({
       success: true,
-      data: webhook
+      data: webhook,
     });
   } catch (error) {
     console.error("Error updating webhook:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating webhook"
+      message: "Error updating webhook",
     });
   }
 };
@@ -1460,25 +1481,25 @@ export const deleteWebhook = async (req, res) => {
 
     const webhook = await Webhook.findOneAndDelete({
       _id: id,
-      clientId: req.apiClient._id
+      clientId: req.apiClient._id,
     });
 
     if (!webhook) {
       return res.status(404).json({
         success: false,
-        message: "Webhook not found"
+        message: "Webhook not found",
       });
     }
 
     res.json({
       success: true,
-      data: webhook
+      data: webhook,
     });
   } catch (error) {
     console.error("Error deleting webhook:", error);
     res.status(500).json({
       success: false,
-      message: "Error deleting webhook"
+      message: "Error deleting webhook",
     });
   }
 };

@@ -2,7 +2,7 @@ import User from "../models/User.js";
 import { generateToken, verifyToken } from "../utils/jwt.js";
 import { uploadMiddleware, deleteFile } from "../utils/fileUpload.js";
 import APIClient from "../models/APIClient.js";
-import moment from "moment"; // Import moment for date formatting (if needed, although aggregation handles it)
+import moment from "moment";
 
 // @desc    Register user
 // @route   POST /api/users/register
@@ -91,12 +91,13 @@ export const login = async (req, res) => {
     // Generate token
     const token = generateToken(user);
 
-    // Set HTTP-only cookie
+    // Set HTTP-only cookie with proper configuration
     res.cookie('auth_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/' // Ensure cookie is available for all paths
     });
 
     res.json({
@@ -247,11 +248,11 @@ export const changePassword = async (req, res) => {
 // @access  Private
 export const logout = async (req, res) => {
   try {
-    // Clear the auth token cookie
     res.clearCookie('auth_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development',
-      sameSite: 'strict'
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
     });
 
     res.status(200).json({
