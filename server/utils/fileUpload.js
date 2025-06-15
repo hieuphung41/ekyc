@@ -29,7 +29,7 @@ const fileFilter = (req, file, cb) => {
     containerType = CONTAINERS.FACE;
   } else if (req.path.includes('/document')) {
     containerType = CONTAINERS.DOCUMENT;
-  } else if (req.path.includes('/voice')) {
+  } else if (req.path.includes('/voice') || req.path.includes('/speech')) {
     containerType = CONTAINERS.VOICE;
   } else if (req.path.includes('/video')) {
     containerType = CONTAINERS.VIDEO;
@@ -38,11 +38,12 @@ const fileFilter = (req, file, cb) => {
   console.log('Incoming file type:', {
     originalname: file.originalname,
     mimetype: file.mimetype,
-    containerType
+    containerType,
+    path: req.path
   });
 
   if (!containerType) {
-    return cb(new Error("Invalid upload endpoint"), false);
+    return cb(new Error(`Invalid upload endpoint: ${req.path}. Supported endpoints: /face, /document, /voice, /speech, /video`), false);
   }
 
   const allowedTypes = ALLOWED_CONTENT_TYPES[containerType];
