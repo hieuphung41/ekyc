@@ -443,7 +443,8 @@ export const revokeApiKey = async (req, res) => {
       });
     }
 
-    const apiKey = client.apiKeys.id(keyId);
+    // Find the API key in the client's apiKeys array
+    const apiKey = client.apiKeys.find(key => key._id.toString() === keyId);
     if (!apiKey) {
       return res.status(404).json({
         success: false,
@@ -451,6 +452,7 @@ export const revokeApiKey = async (req, res) => {
       });
     }
 
+    // Update the API key status
     apiKey.status = "revoked";
     await client.save();
 
@@ -459,6 +461,7 @@ export const revokeApiKey = async (req, res) => {
       data: {
         _id: apiKey._id,
         status: apiKey.status,
+        revokedAt: new Date()
       },
     });
   } catch (error) {
@@ -466,6 +469,7 @@ export const revokeApiKey = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error revoking API key",
+      error: error.message
     });
   }
 };
