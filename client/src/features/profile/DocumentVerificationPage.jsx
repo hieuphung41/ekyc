@@ -261,7 +261,7 @@ const DocumentVerificationPage = () => {
                       Issuing Country
                     </h3>
                     <p className="text-lg font-semibold">
-                      {document.issuingCountry || "N/A"}
+                      {document?.ocrData?.extractedFields?.nationality || "N/A"}
                     </p>
                   </div>
 
@@ -271,8 +271,8 @@ const DocumentVerificationPage = () => {
                       Expiry Date
                     </h3>
                     <p className="text-lg font-semibold">
-                      {document.expiryDate
-                        ? new Date(document.expiryDate).toLocaleDateString()
+                      {document?.ocrData?.extractedFields?.doe
+                        ? new Date(document?.ocrData?.extractedFields?.doe).toLocaleDateString()
                         : "N/A"}
                     </p>
                   </div>
