@@ -399,18 +399,24 @@ export const generateApiKey = async (req, res) => {
     const apiKey = client.generateNewApiKey();
     await client.save();
 
+    // Return the complete API key data
     res.json({
       success: true,
       data: {
-        apiKey: apiKey.key,
+        _id: apiKey._id,
+        key: apiKey.key,
+        status: apiKey.status,
+        createdAt: apiKey.createdAt,
         expiresAt: apiKey.expiresAt,
-      },
+        lastUsed: apiKey.lastUsed
+      }
     });
   } catch (error) {
     console.error("API key generation error:", error);
     res.status(500).json({
       success: false,
       message: "Error generating API key",
+      error: error.message
     });
   }
 };
