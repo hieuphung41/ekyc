@@ -42,88 +42,111 @@ const AdminDashboard = () => {
     fetchStats();
   }, [dispatch]);
 
-  // Prepare chart data for users based on selected period
-  const userChartData = {
-    labels: stats?.userStats?.[userPeriod]?.map(stat => {
-      // Format the date based on period
-      if (userPeriod === 'week') {
+  // Format labels based on period
+  const formatLabels = (stats, period) => {
+    if (!stats) return [];
+    return stats.map(stat => {
+      if (period === 'week') {
         return `Week ${stat._id.split('-')[1]}`;
-      } else if (userPeriod === 'month') {
+      } else if (period === 'month') {
         const [year, month] = stat._id.split('-');
         return `${month}/${year}`;
       } else {
         return stat._id;
       }
-    }) || [],
-    datasets: [
-      {
+    });
+  };
+
+  // User chart configuration
+  const userChartConfig = {
+    type: 'line',
+    data: {
+      labels: formatLabels(stats?.userStats?.[userPeriod], userPeriod),
+      datasets: [{
         label: `New Users (${userPeriod.charAt(0).toUpperCase() + userPeriod.slice(1)})`,
         data: stats?.userStats?.[userPeriod]?.map(stat => stat.count) || [],
+        fill: false,
         borderColor: 'rgb(75, 192, 192)',
         tension: 0.1,
-        fill: false,
         pointRadius: 5,
         pointBackgroundColor: '#fff',
         pointBorderColor: 'rgb(75, 192, 192)',
         pointHoverRadius: 7,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+        },
+        title: {
+          display: false,
+        },
       },
-    ],
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1,
+          },
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxRotation: 45,
+            minRotation: 45,
+          }
+        }
+      },
+    }
   };
 
-  // Prepare chart data for API clients based on selected period
-  const clientChartData = {
-    labels: stats?.clientStats?.[clientPeriod]?.map(stat => {
-      // Format the date based on period
-      if (clientPeriod === 'week') {
-        return `Week ${stat._id.split('-')[1]}`;
-      } else if (clientPeriod === 'month') {
-        const [year, month] = stat._id.split('-');
-        return `${month}/${year}`;
-      } else {
-        return stat._id;
-      }
-    }) || [],
-    datasets: [
-      {
+  // API Client chart configuration
+  const clientChartConfig = {
+    type: 'line',
+    data: {
+      labels: formatLabels(stats?.clientStats?.[clientPeriod], clientPeriod),
+      datasets: [{
         label: `New API Clients (${clientPeriod.charAt(0).toUpperCase() + clientPeriod.slice(1)})`,
         data: stats?.clientStats?.[clientPeriod]?.map(stat => stat.count) || [],
+        fill: false,
         borderColor: 'rgb(153, 102, 255)',
         tension: 0.1,
-        fill: false,
         pointRadius: 5,
         pointBackgroundColor: '#fff',
         pointBorderColor: 'rgb(153, 102, 255)',
         pointHoverRadius: 7,
-      },
-    ],
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top',
-      },
-      title: {
-        display: false,
-      },
+      }]
     },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          stepSize: 1,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+        },
+        title: {
+          display: false,
         },
       },
-      x: {
-        ticks: {
-          autoSkip: true,
-          maxRotation: 45,
-          minRotation: 45,
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            stepSize: 1,
+          },
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxRotation: 45,
+            minRotation: 45,
+          }
         }
-      }
-    },
+      },
+    }
   };
 
   if (loading) {
@@ -214,7 +237,7 @@ const AdminDashboard = () => {
               </select>
             </div>
             <div className="h-80">
-              <Line data={userChartData} options={chartOptions} />
+              <Line {...userChartConfig} />
             </div>
           </div>
           
@@ -233,7 +256,7 @@ const AdminDashboard = () => {
               </select>
             </div>
             <div className="h-80">
-              <Line data={clientChartData} options={chartOptions} />
+              <Line {...clientChartConfig} />
             </div>
           </div>
         </div>
